@@ -1,205 +1,333 @@
 import React, { useState, useCallback } from 'react';
-import type { CSSProperties } from 'react';
 import type { MindNode } from '../types';
-import { LEVEL1_COLORS, STATUS_CONFIG } from '../constants/colors';
+import { ACCENTS, STATUS_CONFIG } from '../constants/colors';
 import MiniMindMap from './MiniMindMap';
 
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-
-const StatusBadge: React.FC<{ status?: string; small?: boolean }> = ({ status, small }) => {
-  const cfg = STATUS_CONFIG[status ?? 'todo'];
-  return (
-    <span style={{
-      backgroundColor: cfg.bg,
-      color: cfg.color,
-      fontSize: small ? 10 : 11,
-      fontWeight: 600,
-      padding: small ? '2px 6px' : '3px 8px',
-      borderRadius: 20,
-      whiteSpace: 'nowrap',
-    }}>
-      {cfg.label}
-    </span>
-  );
+// ── Design tokens ────────────────────────────────────────────────────────────
+const T = {
+  bg:        '#07070C',
+  card:      '#0F0F16',
+  cardEdge:  '#13131B',
+  border:    'rgba(255,255,255,0.065)',
+  borderSub: 'rgba(255,255,255,0.04)',
+  text:      '#DCDCE8',
+  textSub:   '#7676A0',
+  textFaint: '#3E3E58',
 };
+const MAX_W = 460;
 
-// ─── Level-1 Row ──────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function progress(l1: MindNode): number {
+  const kids = l1.children ?? [];
+  if (!kids.length) return l1.status === 'done' ? 1 : 0;
+  return kids.filter(c => c.status === 'done').length / kids.length;
+}
 
-const L1Row: React.FC<{
-  node: MindNode; color: string; expanded: boolean; onToggle: () => void;
-}> = ({ node, color, expanded, onToggle }) => (
-  <div
-    onClick={onToggle}
-    style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '13px 14px',
-      borderLeft: `4px solid ${color}`,
-      cursor: 'pointer',
-      userSelect: 'none',
-    }}
-  >
-    <span style={{ color, fontSize: 10, width: 12, flexShrink: 0 }}>
-      {expanded ? '▼' : '▶'}
-    </span>
-    <span style={{ color, fontSize: 15, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-      {node.title}
-    </span>
-    <StatusBadge status={node.status} />
-    {node.owner && <span style={{ fontSize: 12, color: '#64748B', flexShrink: 0 }}>{node.owner}</span>}
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+const Avatar: React.FC<{ name: string; color: string; size?: number }> = ({ name, color, size = 22 }) => (
+  <div style={{
+    width: size, height: size, borderRadius: '50%', flexShrink: 0,
+    background: color + '20', border: `1px solid ${color}40`,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: size * 0.45, fontWeight: 700, color,
+  }}>
+    {name[0]}
   </div>
 );
 
-// ─── Level-2 Row ──────────────────────────────────────────────────────────────
-
-const L2Row: React.FC<{
-  node: MindNode; color: string; mapExpanded: boolean; onMapToggle: () => void;
-}> = ({ node, color, mapExpanded, onMapToggle }) => {
-  const hasChildren = !!node.children?.length;
+const StatusPill: React.FC<{ status?: string; small?: boolean }> = ({ status, small }) => {
+  const s = STATUS_CONFIG[status ?? 'todo'];
+  const isDoing = status === 'doing';
   return (
-    <div
-      onClick={hasChildren ? onMapToggle : undefined}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 14px 10px 12px',
-        backgroundColor: '#FAFAFA',
-        borderTop: '1px solid #F1F5F9',
-        cursor: hasChildren ? 'pointer' : 'default',
-        userSelect: 'none',
-      }}
-    >
-      <div style={{ width: 3, height: 18, borderRadius: 2, backgroundColor: color + '50', flexShrink: 0 }} />
-      {hasChildren ? (
-        <span style={{ color, fontSize: 9, width: 10, flexShrink: 0 }}>{mapExpanded ? '▼' : '▶'}</span>
-      ) : (
-        <div style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color + '60', margin: '0 2px', flexShrink: 0 }} />
-      )}
-      <span style={{ fontSize: 14, fontWeight: 500, color: '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {node.title}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+      <div
+        className={isDoing ? 'pulse' : ''}
+        style={{
+          width: small ? 5 : 6, height: small ? 5 : 6,
+          borderRadius: '50%', background: s.color, flexShrink: 0,
+        }}
+      />
+      <span style={{
+        fontSize: small ? 10 : 11, fontWeight: 600,
+        color: s.color, letterSpacing: '0.25px',
+      }}>
+        {s.label}
       </span>
-      <StatusBadge status={node.status} small />
-      {node.owner && <span style={{ fontSize: 11, color: '#94A3B8', flexShrink: 0 }}>{node.owner}</span>}
-      {hasChildren && (
+    </div>
+  );
+};
+
+// ── L2 Row + embedded mindmap ─────────────────────────────────────────────────
+interface L2Props {
+  node: MindNode; color: string;
+  mapOpen: boolean; onMapToggle: () => void;
+  mmWidth: number;
+}
+const L2Row: React.FC<L2Props> = ({ node, color, mapOpen, onMapToggle, mmWidth }) => {
+  const hasKids = !!node.children?.length;
+  return (
+    <div>
+      <div
+        className={`r2${hasKids ? ' click' : ''}`}
+        onClick={hasKids ? onMapToggle : undefined}
+        style={{
+          display: 'flex', alignItems: 'center',
+          padding: '9px 16px 9px 28px', gap: 9,
+          borderTop: `1px solid ${T.borderSub}`,
+        }}
+      >
+        {/* Indent accent bar */}
+        <div style={{
+          width: 2.5, height: 16, borderRadius: 2,
+          background: color + '45', flexShrink: 0,
+        }} />
+
+        {/* Chevron or dot */}
+        {hasKids
+          ? <span style={{ fontSize: 8, color, width: 9, flexShrink: 0, transition: 'transform 0.22s ease', display: 'inline-block', transform: mapOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
+          : <div style={{ width: 5, height: 5, borderRadius: '50%', background: color + '55', flexShrink: 0, margin: '0 2px' }} />
+        }
+
         <span style={{
-          border: `1px solid ${color}80`,
-          backgroundColor: color + '0D',
-          color,
-          fontSize: 10, fontWeight: 600,
-          padding: '1px 5px', borderRadius: 4, flexShrink: 0,
+          flex: 1, fontSize: 13.5, fontWeight: 450,
+          color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          脑图
+          {node.title}
         </span>
+
+        <StatusPill status={node.status} small />
+        {node.owner && <Avatar name={node.owner} color={color} size={20} />}
+
+        {/* Mindmap tag */}
+        {hasKids && (
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.2px',
+            padding: '2px 7px', borderRadius: 5,
+            color: mapOpen ? color : T.textFaint,
+            border: `1px solid ${mapOpen ? color + '45' : 'rgba(255,255,255,0.06)'}`,
+            background: mapOpen ? color + '12' : 'transparent',
+            transition: 'color 0.2s, border-color 0.2s, background 0.2s',
+            flexShrink: 0,
+          }}>
+            脑图
+          </div>
+        )}
+      </div>
+
+      {/* Inline mindmap — grid-based smooth collapse */}
+      {hasKids && (
+        <div className={`cx ${mapOpen ? 'open' : 'shut'}`}>
+          <div>
+            <div style={{
+              margin: '2px 14px 12px 44px',
+              borderRadius: 10,
+              border: `1px solid ${color}22`,
+              background: `linear-gradient(135deg, ${color}08 0%, rgba(255,255,255,0.01) 100%)`,
+              padding: '10px 10px',
+              overflow: 'hidden',
+            }}>
+              <MiniMindMap node={node} accentColor={color} availableWidth={mmWidth} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 };
 
-// ─── TreeTable ────────────────────────────────────────────────────────────────
+// ── Section card (L1 + its L2 children) ──────────────────────────────────────
+interface SectionProps {
+  l1: MindNode; color: string; idx: number;
+  l1Open: boolean; onL1Toggle: () => void;
+  mapOpenIds: Set<string>; onMapToggle: (id: string) => void;
+  mmWidth: number;
+}
+const Section: React.FC<SectionProps> = ({
+  l1, color, l1Open, onL1Toggle, mapOpenIds, onMapToggle, mmWidth,
+}) => {
+  const pct = progress(l1);
+  return (
+    <div style={{
+      background: T.card, borderRadius: 14, overflow: 'hidden',
+      border: `1px solid ${T.border}`,
+      boxShadow: `0 2px 12px rgba(0,0,0,0.28), 0 0 0 0.5px ${color}18`,
+    }}>
+      {/* Progress bar */}
+      <div style={{ height: 2, background: T.borderSub }}>
+        <div style={{
+          height: '100%', width: `${pct * 100}%`,
+          background: `linear-gradient(90deg, ${color}, ${color}88)`,
+          borderRadius: 1, transition: 'width 0.6s ease',
+        }} />
+      </div>
 
-const CONTAINER_MAX_WIDTH = 480;
+      {/* L1 row */}
+      <div
+        className="r1"
+        onClick={onL1Toggle}
+        style={{
+          display: 'flex', alignItems: 'center',
+          padding: '13px 16px', gap: 10,
+          borderLeft: `3px solid ${color}`,
+        }}
+      >
+        <span style={{
+          fontSize: 10, color, width: 12, flexShrink: 0,
+          display: 'inline-block',
+          transition: 'transform 0.25s ease',
+          transform: l1Open ? 'rotate(90deg)' : 'none',
+        }}>▶</span>
 
+        <span style={{
+          flex: 1, fontSize: 15, fontWeight: 700,
+          color, letterSpacing: '-0.2px',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {l1.title}
+        </span>
+
+        <StatusPill status={l1.status} />
+        {l1.owner && <Avatar name={l1.owner} color={color} />}
+      </div>
+
+      {/* L2 children — grid collapse */}
+      <div className={`cx ${l1Open ? 'open' : 'shut'}`}>
+        <div>
+          {(l1.children ?? []).map(l2 => (
+            <L2Row
+              key={l2.id}
+              node={l2}
+              color={color}
+              mapOpen={mapOpenIds.has(l2.id)}
+              onMapToggle={() => onMapToggle(l2.id)}
+              mmWidth={mmWidth}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Dot-grid background ───────────────────────────────────────────────────────
+const DotGrid: React.FC = () => (
+  <svg
+    style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', zIndex: 0, pointerEvents: 'none' }}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <defs>
+      <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r="0.9" fill="rgba(255,255,255,0.06)" />
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#dots)" />
+  </svg>
+);
+
+// ── TreeTable root ────────────────────────────────────────────────────────────
 const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
-  const allL1Ids = new Set((data.children ?? []).map(n => n.id));
-  const allL2WithChildrenIds = new Set(
-    (data.children ?? []).flatMap(l1 =>
-      (l1.children ?? []).filter(l2 => l2.children?.length).map(l2 => l2.id),
-    ),
+  const allL1 = data.children ?? [];
+  const allL2WithKids = allL1.flatMap(l1 =>
+    (l1.children ?? []).filter(l2 => l2.children?.length).map(l2 => l2.id),
   );
 
-  const [expandedL1, setExpandedL1] = useState<Set<string>>(allL1Ids);
-  const [expandedMaps, setExpandedMaps] = useState<Set<string>>(allL2WithChildrenIds);
+  const [openL1, setOpenL1] = useState(() => new Set(allL1.map(n => n.id)));
+  const [openMaps, setOpenMaps] = useState(() => new Set(allL2WithKids));
 
   const toggleL1 = useCallback((id: string) => {
-    setExpandedL1(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+    setOpenL1(p => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }, []);
-
   const toggleMap = useCallback((id: string) => {
-    setExpandedMaps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+    setOpenMaps(p => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }, []);
 
-  const mmAvailWidth = CONTAINER_MAX_WIDTH - 16 - 60;
+  // Mindmap available width: container(MAX_W) - outer padding(16) - left indent(44) - right margin(14)
+  const mmWidth = MAX_W - 16 - 44 - 14 - 20;
 
-  const card: CSSProperties = {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginBottom: 8,
-    overflow: 'hidden',
-    boxShadow: '0 1px 4px rgba(15,23,42,0.07)',
-  };
+  // Overall completion stats
+  const totalL2 = allL1.flatMap(l => l.children ?? []).length;
+  const doneL2  = allL1.flatMap(l => l.children ?? []).filter(l => l.status === 'done').length;
+  const overallPct = totalL2 > 0 ? Math.round((doneL2 / totalL2) * 100) : 0;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#F1F5F9', padding: '8px 0', fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif' }}>
-      <div style={{ maxWidth: CONTAINER_MAX_WIDTH, margin: '0 auto', padding: '0 8px' }}>
+    <div style={{ minHeight: '100vh', background: T.bg, padding: '16px 0 48px', position: 'relative' }}>
+      <DotGrid />
 
-        {/* Header */}
-        <div style={{ backgroundColor: '#1E293B', borderRadius: 16, padding: '18px 20px', marginBottom: 10 }}>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>OpenXmind Mobile</div>
-          <div style={{ fontSize: 12, color: '#94A3B8' }}>TreeTable × MindMap 混合视图 Demo</div>
-        </div>
+      <div style={{ maxWidth: MAX_W, margin: '0 auto', padding: '0 8px', position: 'relative', zIndex: 1 }}>
 
-        {/* Root card */}
-        <div style={{ ...card, padding: 14, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <span style={{ fontSize: 30 }}>🗺</span>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#1E293B', marginBottom: 2 }}>{data.title}</div>
-            <div style={{ fontSize: 11, color: '#94A3B8' }}>
-              前两级用表格视图，深层子节点自动切换为脑图
+        {/* ── Header ── */}
+        <div style={{ marginBottom: 20, padding: '4px 4px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', color: T.textFaint, textTransform: 'uppercase' }}>
+              OpenXmind
+            </span>
+            <span style={{ fontSize: 11, color: T.textFaint }}>·</span>
+            <span style={{ fontSize: 11, color: T.textFaint, letterSpacing: '0.5px' }}>Mobile Demo</span>
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: T.text, letterSpacing: '-0.4px', lineHeight: 1.2 }}>
+            {data.title}
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginTop: 10,
+          }}>
+            {/* Mini overall progress */}
+            <div style={{ flex: 1, height: 3, background: T.border, borderRadius: 2 }}>
+              <div style={{
+                height: '100%', width: `${overallPct}%`,
+                background: 'linear-gradient(90deg, #7B7CEB, #3DBFA6)',
+                borderRadius: 2, transition: 'width 0.8s ease',
+              }} />
             </div>
+            <span style={{ fontSize: 12, color: T.textSub, fontWeight: 600, flexShrink: 0 }}>
+              {doneL2} / {totalL2} 完成
+            </span>
           </div>
         </div>
 
-        {/* Level-1 sections */}
-        {(data.children ?? []).map((l1, idx) => {
-          const color = LEVEL1_COLORS[idx % LEVEL1_COLORS.length];
-          const isL1Open = expandedL1.has(l1.id);
+        {/* ── Sections ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {allL1.map((l1, i) => (
+            <Section
+              key={l1.id}
+              l1={l1}
+              color={ACCENTS[i % ACCENTS.length]}
+              idx={i}
+              l1Open={openL1.has(l1.id)}
+              onL1Toggle={() => toggleL1(l1.id)}
+              mapOpenIds={openMaps}
+              onMapToggle={toggleMap}
+              mmWidth={mmWidth}
+            />
+          ))}
+        </div>
 
-          return (
-            <div key={l1.id} style={card}>
-              <L1Row node={l1} color={color} expanded={isL1Open} onToggle={() => toggleL1(l1.id)} />
-
-              {isL1Open && (
-                <div style={{ borderTop: '1px solid #F1F5F9' }}>
-                  {(l1.children ?? []).map((l2) => {
-                    const hasChildren = !!l2.children?.length;
-                    const isMapOpen = expandedMaps.has(l2.id);
-
-                    return (
-                      <div key={l2.id}>
-                        <L2Row node={l2} color={color} mapExpanded={isMapOpen} onMapToggle={() => toggleMap(l2.id)} />
-
-                        {/* Embedded Mini MindMap */}
-                        {hasChildren && isMapOpen && (
-                          <div style={{
-                            marginLeft: 52, marginRight: 10, marginBottom: 10,
-                            borderLeft: `2px solid ${color}40`,
-                            borderRadius: 8,
-                            backgroundColor: '#F8FAFF',
-                            paddingLeft: 8,
-                          }}>
-                            <MiniMindMap node={l2} accentColor={color} availableWidth={mmAvailWidth} />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Legend */}
-        <div style={{ ...card, padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#94A3B8', marginBottom: 10 }}>操作说明</div>
+        {/* ── Legend ── */}
+        <div style={{
+          marginTop: 24, padding: '14px 16px',
+          borderRadius: 10, border: `1px solid ${T.border}`,
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: T.textFaint, textTransform: 'uppercase' }}>
+            操作
+          </span>
           {[
-            { color: '#6366F1', text: '点击板块标题行 → 展开/折叠该板块的所有子项' },
-            { color: '#10B981', text: '点击带「脑图」标签的子项 → 展开/收起内嵌 SVG 脑图' },
-          ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: '#64748B' }}>{item.text}</span>
+            ['▶', '点击板块名称 — 折叠/展开子任务列表'],
+            ['脑图', '点击含「脑图」标签的子项 — 展开内嵌思维导图'],
+          ].map(([tag, desc]) => (
+            <div key={tag} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700,
+                color: T.textSub, minWidth: 28, textAlign: 'center',
+                padding: '1px 5px', borderRadius: 4, border: `1px solid ${T.border}`,
+              }}>
+                {tag}
+              </span>
+              <span style={{ fontSize: 12, color: T.textFaint }}>{desc}</span>
             </div>
           ))}
         </div>
+
       </div>
     </div>
   );
