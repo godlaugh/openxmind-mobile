@@ -9,6 +9,7 @@ interface Props {
 
 // Compact dimensions suited for embedding in a table cell
 const NW = 56, NH = 21, HG = 13, VG = 9, PAD = 7;
+const RC = 7; // root dot radius — replaces the repeated L2 title rect
 
 function leaves(n: MindNode): number {
   if (!n.children?.length) return 1;
@@ -18,15 +19,16 @@ function maxDepth(n: MindNode, d = 0): number {
   if (!n.children?.length) return d;
   return Math.max(...n.children.map(c => maxDepth(c, d + 1)));
 }
-function buildLayout(n: MindNode, x: number, yTop: number): [NodeLayout, number] {
+function buildLayout(n: MindNode, x: number, yTop: number, depth = 0): [NodeLayout, number] {
   const lc = leaves(n);
   const totalH = lc * (NH + VG) - VG;
   const y = yTop + (totalH - NH) / 2;
   const nl: NodeLayout = { node: n, x, y, children: [] };
   if (n.children?.length) {
+    const colW = depth === 0 ? RC * 2 : NW;
     let cy = yTop;
     for (const c of n.children) {
-      const [cl, ch] = buildLayout(c, x + NW + HG, cy);
+      const [cl, ch] = buildLayout(c, x + colW + HG, cy, depth + 1);
       nl.children.push(cl);
       cy += ch + VG;
     }
@@ -35,14 +37,34 @@ function buildLayout(n: MindNode, x: number, yTop: number): [NodeLayout, number]
 }
 
 function draw(nl: NodeLayout, accent: string, depth: number, out: React.ReactElement[]) {
-  const isRoot   = depth === 0;
-  const isChild  = depth === 1;
+  if (depth === 0) {
+    // Root = small filled dot (the title is already shown in the L2 cell)
+    const cx = nl.x + RC;
+    const cy = nl.y + NH / 2;
+    out.push(
+      <circle key={`r-${nl.node.id}`} cx={cx} cy={cy} r={RC} fill={accent} />,
+    );
+    for (const child of nl.children) {
+      const sx = nl.x + RC * 2, sy = cy;
+      const ex = child.x, ey = child.y + NH / 2;
+      const mx = (sx + ex) / 2;
+      out.push(
+        <path key={`p-${nl.node.id}-${child.node.id}`}
+          d={`M${sx},${sy} C${mx},${sy} ${mx},${ey} ${ex},${ey}`}
+          fill="none" stroke={accent + '55'}
+          strokeWidth={1.4} strokeLinecap="round"
+        />,
+      );
+      draw(child, accent, depth + 1, out);
+    }
+    return;
+  }
 
-  const fill   = isRoot ? accent : isChild ? '#FFFFFF' : 'rgba(0,0,0,0.04)';
-  const stroke = isRoot ? 'none'  : isChild ? accent + '55' : 'rgba(0,0,0,0.10)';
-  const tColor = isRoot ? '#fff'  : isChild ? accent : '#8888A0';
-  const fw     = isRoot ? 700     : isChild ? 550     : 400;
-  const fs     = isRoot ? 10.5    : 9.5;
+  const isChild = depth === 1;
+  const fill   = isChild ? '#FFFFFF' : 'rgba(0,0,0,0.04)';
+  const stroke = isChild ? accent + '55' : 'rgba(0,0,0,0.10)';
+  const tColor = isChild ? accent : '#8888A0';
+  const fw     = isChild ? 550 : 400;
 
   const raw   = nl.node.title;
   const label = raw.length > 6 ? raw.slice(0, 5) + '…' : raw;
@@ -54,7 +76,7 @@ function draw(nl: NodeLayout, accent: string, depth: number, out: React.ReactEle
     />,
     <text key={`t-${nl.node.id}`}
       x={nl.x + NW / 2} y={nl.y + NH / 2 + 3.8}
-      textAnchor="middle" fontSize={fs} fontWeight={fw} fill={tColor}
+      textAnchor="middle" fontSize={9.5} fontWeight={fw} fill={tColor}
     >
       {label}
     </text>,
@@ -67,8 +89,7 @@ function draw(nl: NodeLayout, accent: string, depth: number, out: React.ReactEle
     out.push(
       <path key={`p-${nl.node.id}-${child.node.id}`}
         d={`M${sx},${sy} C${mx},${sy} ${mx},${ey} ${ex},${ey}`}
-        fill="none"
-        stroke={isRoot ? accent + '55' : 'rgba(0,0,0,0.11)'}
+        fill="none" stroke="rgba(0,0,0,0.11)"
         strokeWidth={1.4} strokeLinecap="round"
       />,
     );
@@ -80,7 +101,8 @@ const MiniMindMap: React.FC<Props> = ({ node, accentColor, availableWidth }) => 
   const { rootLayout, svgW, svgH } = useMemo(() => {
     const [rl, totalH] = buildLayout(node, PAD, PAD);
     const d = maxDepth(node);
-    const w = (d + 1) * (NW + HG) - HG + PAD * 2;
+    // Root column = RC*2 (dot), remaining d columns = NW each, gaps = HG each
+    const w = PAD * 2 + RC * 2 + d * (NW + HG);
     const h = totalH + PAD * 2;
     return { rootLayout: rl, svgW: w, svgH: h };
   }, [node]);
