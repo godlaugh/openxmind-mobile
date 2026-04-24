@@ -2,32 +2,16 @@
 
 html, body, #root {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
     'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: #07070C;
-  color: #D8D8E8;
+  background: #EDECEA;
+  color: #1A181E;
 }
 
-/* ── Collapse (grid technique — no max-height hack) ── */
-.cx { display: grid; transition: grid-template-rows 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease; }
-.cx.open { grid-template-rows: 1fr; opacity: 1; }
-.cx.shut { grid-template-rows: 0fr; opacity: 0; }
-.cx > div { overflow: hidden; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.22} }
+.pulse { animation: pulse 2.6s ease-in-out infinite; }
 
-/* ── Row hover states ── */
-.r1 { transition: background 0.13s ease; cursor: pointer; user-select: none; }
-.r1:hover { background: rgba(255,255,255,0.024) !important; }
-.r2 { transition: background 0.13s ease; user-select: none; }
-.r2.click { cursor: pointer; }
-.r2:hover { background: rgba(255,255,255,0.018) !important; }
-
-/* ── "Doing" pulse ── */
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.28} }
-.pulse { animation: pulse 2.4s ease-in-out infinite; }
-
-/* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 2px; }

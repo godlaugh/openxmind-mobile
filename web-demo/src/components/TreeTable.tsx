@@ -1,331 +1,262 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import type { MindNode } from '../types';
 import { ACCENTS, STATUS_CONFIG } from '../constants/colors';
 import MiniMindMap from './MiniMindMap';
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const T = {
-  bg:        '#07070C',
-  card:      '#0F0F16',
-  cardEdge:  '#13131B',
-  border:    'rgba(255,255,255,0.065)',
-  borderSub: 'rgba(255,255,255,0.04)',
-  text:      '#DCDCE8',
-  textSub:   '#7676A0',
-  textFaint: '#3E3E58',
+  pageBg:   '#EDECEA',
+  surface:  '#FFFFFF',
+  surfaceAlt: '#F7F6F3',
+  border:   'rgba(0,0,0,0.09)',
+  borderSub:'rgba(0,0,0,0.055)',
+  text:     '#1A181E',
+  textSub:  '#65657A',
+  textFaint:'#AAAABB',
 };
-const MAX_W = 460;
+const MAX_W = 520;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function progress(l1: MindNode): number {
-  const kids = l1.children ?? [];
-  if (!kids.length) return l1.status === 'done' ? 1 : 0;
-  return kids.filter(c => c.status === 'done').length / kids.length;
+// ── Row flattening ───────────────────────────────────────────────────────────
+// Converts nested tree into flat table rows, with rowSpan for parent cells.
+interface FlatRow {
+  l1: MindNode;
+  l1Span: number;     // rowSpan of the L1 cell
+  isFirstInL1: boolean;
+  l2: MindNode;
+  color: string;
 }
 
-// ── Sub-components ───────────────────────────────────────────────────────────
+function flatten(data: MindNode): FlatRow[] {
+  const rows: FlatRow[] = [];
+  (data.children ?? []).forEach((l1, idx) => {
+    const color = ACCENTS[idx % ACCENTS.length];
+    const l2s   = l1.children ?? [];
+    if (!l2s.length) {
+      // L1 has no children — single row, L2 = L1
+      rows.push({ l1, l1Span: 1, isFirstInL1: true, l2: l1, color });
+    } else {
+      l2s.forEach((l2, j) => {
+        rows.push({ l1, l1Span: l2s.length, isFirstInL1: j === 0, l2, color });
+      });
+    }
+  });
+  return rows;
+}
 
-const Avatar: React.FC<{ name: string; color: string; size?: number }> = ({ name, color, size = 22 }) => (
-  <div style={{
-    width: size, height: size, borderRadius: '50%', flexShrink: 0,
-    background: color + '20', border: `1px solid ${color}40`,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: size * 0.45, fontWeight: 700, color,
-  }}>
-    {name[0]}
-  </div>
-);
+// ── Helper components ────────────────────────────────────────────────────────
 
-const StatusPill: React.FC<{ status?: string; small?: boolean }> = ({ status, small }) => {
+const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
   const s = STATUS_CONFIG[status ?? 'todo'];
-  const isDoing = status === 'doing';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5 }}>
       <div
-        className={isDoing ? 'pulse' : ''}
-        style={{
-          width: small ? 5 : 6, height: small ? 5 : 6,
-          borderRadius: '50%', background: s.color, flexShrink: 0,
-        }}
+        className={status === 'doing' ? 'pulse' : ''}
+        style={{ width: 5, height: 5, borderRadius: '50%', background: s.color, flexShrink: 0 }}
       />
-      <span style={{
-        fontSize: small ? 10 : 11, fontWeight: 600,
-        color: s.color, letterSpacing: '0.25px',
-      }}>
+      <span style={{ fontSize: 10, fontWeight: 600, color: s.color, letterSpacing: '0.15px' }}>
         {s.label}
       </span>
     </div>
   );
 };
 
-// ── L2 Row + embedded mindmap ─────────────────────────────────────────────────
-interface L2Props {
-  node: MindNode; color: string;
-  mapOpen: boolean; onMapToggle: () => void;
-  mmWidth: number;
-}
-const L2Row: React.FC<L2Props> = ({ node, color, mapOpen, onMapToggle, mmWidth }) => {
-  const hasKids = !!node.children?.length;
-  return (
-    <div>
-      <div
-        className={`r2${hasKids ? ' click' : ''}`}
-        onClick={hasKids ? onMapToggle : undefined}
-        style={{
-          display: 'flex', alignItems: 'center',
-          padding: '9px 16px 9px 28px', gap: 9,
-          borderTop: `1px solid ${T.borderSub}`,
-        }}
-      >
-        {/* Indent accent bar */}
-        <div style={{
-          width: 2.5, height: 16, borderRadius: 2,
-          background: color + '45', flexShrink: 0,
-        }} />
-
-        {/* Chevron or dot */}
-        {hasKids
-          ? <span style={{ fontSize: 8, color, width: 9, flexShrink: 0, transition: 'transform 0.22s ease', display: 'inline-block', transform: mapOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
-          : <div style={{ width: 5, height: 5, borderRadius: '50%', background: color + '55', flexShrink: 0, margin: '0 2px' }} />
-        }
-
-        <span style={{
-          flex: 1, fontSize: 13.5, fontWeight: 450,
-          color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {node.title}
-        </span>
-
-        <StatusPill status={node.status} small />
-        {node.owner && <Avatar name={node.owner} color={color} size={20} />}
-
-        {/* Mindmap tag */}
-        {hasKids && (
-          <div style={{
-            fontSize: 10, fontWeight: 600, letterSpacing: '0.2px',
-            padding: '2px 7px', borderRadius: 5,
-            color: mapOpen ? color : T.textFaint,
-            border: `1px solid ${mapOpen ? color + '45' : 'rgba(255,255,255,0.06)'}`,
-            background: mapOpen ? color + '12' : 'transparent',
-            transition: 'color 0.2s, border-color 0.2s, background 0.2s',
-            flexShrink: 0,
-          }}>
-            脑图
-          </div>
-        )}
-      </div>
-
-      {/* Inline mindmap — grid-based smooth collapse */}
-      {hasKids && (
-        <div className={`cx ${mapOpen ? 'open' : 'shut'}`}>
-          <div>
-            <div style={{
-              margin: '2px 14px 12px 44px',
-              borderRadius: 10,
-              border: `1px solid ${color}22`,
-              background: `linear-gradient(135deg, ${color}08 0%, rgba(255,255,255,0.01) 100%)`,
-              padding: '10px 10px',
-              overflow: 'hidden',
-            }}>
-              <MiniMindMap node={node} accentColor={color} availableWidth={mmWidth} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ── Section card (L1 + its L2 children) ──────────────────────────────────────
-interface SectionProps {
-  l1: MindNode; color: string; idx: number;
-  l1Open: boolean; onL1Toggle: () => void;
-  mapOpenIds: Set<string>; onMapToggle: (id: string) => void;
-  mmWidth: number;
-}
-const Section: React.FC<SectionProps> = ({
-  l1, color, l1Open, onL1Toggle, mapOpenIds, onMapToggle, mmWidth,
-}) => {
-  const pct = progress(l1);
-  return (
-    <div style={{
-      background: T.card, borderRadius: 14, overflow: 'hidden',
-      border: `1px solid ${T.border}`,
-      boxShadow: `0 2px 12px rgba(0,0,0,0.28), 0 0 0 0.5px ${color}18`,
-    }}>
-      {/* Progress bar */}
-      <div style={{ height: 2, background: T.borderSub }}>
-        <div style={{
-          height: '100%', width: `${pct * 100}%`,
-          background: `linear-gradient(90deg, ${color}, ${color}88)`,
-          borderRadius: 1, transition: 'width 0.6s ease',
-        }} />
-      </div>
-
-      {/* L1 row */}
-      <div
-        className="r1"
-        onClick={onL1Toggle}
-        style={{
-          display: 'flex', alignItems: 'center',
-          padding: '13px 16px', gap: 10,
-          borderLeft: `3px solid ${color}`,
-        }}
-      >
-        <span style={{
-          fontSize: 10, color, width: 12, flexShrink: 0,
-          display: 'inline-block',
-          transition: 'transform 0.25s ease',
-          transform: l1Open ? 'rotate(90deg)' : 'none',
-        }}>▶</span>
-
-        <span style={{
-          flex: 1, fontSize: 15, fontWeight: 700,
-          color, letterSpacing: '-0.2px',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {l1.title}
-        </span>
-
-        <StatusPill status={l1.status} />
-        {l1.owner && <Avatar name={l1.owner} color={color} />}
-      </div>
-
-      {/* L2 children — grid collapse */}
-      <div className={`cx ${l1Open ? 'open' : 'shut'}`}>
-        <div>
-          {(l1.children ?? []).map(l2 => (
-            <L2Row
-              key={l2.id}
-              node={l2}
-              color={color}
-              mapOpen={mapOpenIds.has(l2.id)}
-              onMapToggle={() => onMapToggle(l2.id)}
-              mmWidth={mmWidth}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── Dot-grid background ───────────────────────────────────────────────────────
-const DotGrid: React.FC = () => (
-  <svg
-    style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', zIndex: 0, pointerEvents: 'none' }}
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <defs>
-      <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-        <circle cx="1" cy="1" r="0.9" fill="rgba(255,255,255,0.06)" />
-      </pattern>
-    </defs>
-    <rect width="100%" height="100%" fill="url(#dots)" />
-  </svg>
+const Chip: React.FC<{ name: string; color: string }> = ({ name, color }) => (
+  <div style={{
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 19, height: 19, borderRadius: '50%',
+    background: color + '1C', border: `1px solid ${color}3E`,
+    fontSize: 9, fontWeight: 700, color,
+  }}>
+    {name[0]}
+  </div>
 );
 
-// ── TreeTable root ────────────────────────────────────────────────────────────
+// ── Main component ───────────────────────────────────────────────────────────
 const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
-  const allL1 = data.children ?? [];
-  const allL2WithKids = allL1.flatMap(l1 =>
-    (l1.children ?? []).filter(l2 => l2.children?.length).map(l2 => l2.id),
-  );
+  const rows = flatten(data);
 
-  const [openL1, setOpenL1] = useState(() => new Set(allL1.map(n => n.id)));
-  const [openMaps, setOpenMaps] = useState(() => new Set(allL2WithKids));
+  // Overall completion
+  const total = rows.length;
+  const done  = rows.filter(r => r.l2.status === 'done').length;
+  const pct   = total > 0 ? done / total : 0;
 
-  const toggleL1 = useCallback((id: string) => {
-    setOpenL1(p => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  }, []);
-  const toggleMap = useCallback((id: string) => {
-    setOpenMaps(p => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  }, []);
+  // Mindmap column available width ≈ 46% of table - cell padding
+  const tableW  = Math.min(MAX_W, typeof window !== 'undefined' ? window.innerWidth - 32 : 488);
+  const mmWidth = Math.floor(tableW * 0.46) - 14;
 
-  // Mindmap available width: container(MAX_W) - outer padding(16) - left indent(44) - right margin(14)
-  const mmWidth = MAX_W - 16 - 44 - 14 - 20;
-
-  // Overall completion stats
-  const totalL2 = allL1.flatMap(l => l.children ?? []).length;
-  const doneL2  = allL1.flatMap(l => l.children ?? []).filter(l => l.status === 'done').length;
-  const overallPct = totalL2 > 0 ? Math.round((doneL2 / totalL2) * 100) : 0;
+  // ── Section border helpers ───────────────────────────────────────────────
+  const secTop = (color: string) => `2px solid ${color}`;
+  const inner  = `1px solid ${T.border}`;
+  const innerSub = `1px solid ${T.borderSub}`;
 
   return (
-    <div style={{ minHeight: '100vh', background: T.bg, padding: '16px 0 48px', position: 'relative' }}>
-      <DotGrid />
+    <div style={{ background: T.pageBg, minHeight: '100vh', padding: '24px 8px 60px' }}>
+      <div style={{ maxWidth: MAX_W, margin: '0 auto' }}>
 
-      <div style={{ maxWidth: MAX_W, margin: '0 auto', padding: '0 8px', position: 'relative', zIndex: 1 }}>
-
-        {/* ── Header ── */}
-        <div style={{ marginBottom: 20, padding: '4px 4px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', color: T.textFaint, textTransform: 'uppercase' }}>
-              OpenXmind
-            </span>
-            <span style={{ fontSize: 11, color: T.textFaint }}>·</span>
-            <span style={{ fontSize: 11, color: T.textFaint, letterSpacing: '0.5px' }}>Mobile Demo</span>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: T.text, letterSpacing: '-0.4px', lineHeight: 1.2 }}>
-            {data.title}
+        {/* ── Page header ── */}
+        <div style={{ padding: '0 2px 18px' }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '1.4px',
+            color: T.textFaint, textTransform: 'uppercase', marginBottom: 7,
+          }}>
+            OpenXmind · Mobile Demo
           </div>
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, marginTop: 10,
+            fontSize: 26, fontWeight: 800, color: T.text,
+            letterSpacing: '-0.6px', lineHeight: 1.1, marginBottom: 14,
           }}>
-            {/* Mini overall progress */}
-            <div style={{ flex: 1, height: 3, background: T.border, borderRadius: 2 }}>
+            {data.title}
+          </div>
+          {/* Overall progress */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.09)', borderRadius: 2 }}>
               <div style={{
-                height: '100%', width: `${overallPct}%`,
-                background: 'linear-gradient(90deg, #7B7CEB, #3DBFA6)',
-                borderRadius: 2, transition: 'width 0.8s ease',
+                height: '100%', width: `${pct * 100}%`,
+                background: 'linear-gradient(90deg, #3E9E8C 0%, #6DA84E 100%)',
+                borderRadius: 2, transition: 'width 0.9s ease',
               }} />
             </div>
-            <span style={{ fontSize: 12, color: T.textSub, fontWeight: 600, flexShrink: 0 }}>
-              {doneL2} / {totalL2} 完成
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
+              {done} / {total} 完成
             </span>
           </div>
         </div>
 
-        {/* ── Sections ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {allL1.map((l1, i) => (
-            <Section
-              key={l1.id}
-              l1={l1}
-              color={ACCENTS[i % ACCENTS.length]}
-              idx={i}
-              l1Open={openL1.has(l1.id)}
-              onL1Toggle={() => toggleL1(l1.id)}
-              mapOpenIds={openMaps}
-              onMapToggle={toggleMap}
-              mmWidth={mmWidth}
-            />
-          ))}
+        {/* ── Tree Table ── */}
+        <div style={{
+          borderRadius: 14, overflow: 'hidden',
+          border: inner,
+          boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05)',
+        }}>
+          <table style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            background: T.surface,
+            tableLayout: 'fixed',
+          }}>
+            <colgroup>
+              {/* L1 category  |  L2 sub-item  |  L3 mindmap */}
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '32%' }} />
+              <col style={{ width: '46%' }} />
+            </colgroup>
+
+            <tbody>
+              {rows.map((row, i) => {
+                const isNew = row.isFirstInL1;
+                const topBorder = isNew ? secTop(row.color) : innerSub;
+                const hasMap    = !!row.l2.children?.length;
+
+                return (
+                  <tr key={i}>
+                    {/* ── L1 cell (rowSpan = number of L2 children) ── */}
+                    {isNew && (
+                      <td
+                        rowSpan={row.l1Span}
+                        style={{
+                          verticalAlign: 'middle',
+                          textAlign: 'center',
+                          padding: '14px 8px',
+                          background: row.color + '13',
+                          borderLeft: `3.5px solid ${row.color}`,
+                          borderRight: inner,
+                          borderTop: secTop(row.color),
+                          borderBottom: inner,
+                        }}
+                      >
+                        <div style={{
+                          fontSize: 12, fontWeight: 800,
+                          color: row.color, lineHeight: 1.35,
+                          letterSpacing: '-0.1px',
+                          wordBreak: 'keep-all',
+                          overflowWrap: 'break-word',
+                        }}>
+                          {row.l1.title}
+                        </div>
+                        <StatusDot status={row.l1.status} />
+                        {row.l1.owner && (
+                          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 7 }}>
+                            <Chip name={row.l1.owner} color={row.color} />
+                          </div>
+                        )}
+                      </td>
+                    )}
+
+                    {/* ── L2 cell ── */}
+                    <td style={{
+                      verticalAlign: 'middle',
+                      padding: '10px 12px',
+                      background: T.surface,
+                      borderRight: inner,
+                      borderTop: topBorder,
+                      borderBottom: innerSub,
+                    }}>
+                      <div style={{
+                        fontSize: 12.5, fontWeight: 500,
+                        color: T.text, lineHeight: 1.4,
+                        wordBreak: 'keep-all', overflowWrap: 'break-word',
+                        marginBottom: 5,
+                      }}>
+                        {row.l2.title}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {/* Inline status dot (no "StatusDot" wrapper margin) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <div
+                            className={row.l2.status === 'doing' ? 'pulse' : ''}
+                            style={{
+                              width: 5, height: 5, borderRadius: '50%',
+                              background: STATUS_CONFIG[row.l2.status ?? 'todo'].color,
+                            }}
+                          />
+                          <span style={{
+                            fontSize: 10, fontWeight: 600,
+                            color: STATUS_CONFIG[row.l2.status ?? 'todo'].color,
+                          }}>
+                            {STATUS_CONFIG[row.l2.status ?? 'todo'].label}
+                          </span>
+                        </div>
+                        {row.l2.owner && <Chip name={row.l2.owner} color={row.color} />}
+                      </div>
+                    </td>
+
+                    {/* ── L3 / MindMap cell ── */}
+                    <td style={{
+                      verticalAlign: 'middle',
+                      padding: hasMap ? '7px 8px' : '10px 12px',
+                      background: hasMap ? row.color + '07' : T.surfaceAlt,
+                      borderTop: topBorder,
+                      borderBottom: innerSub,
+                    }}>
+                      {hasMap ? (
+                        <MiniMindMap
+                          node={row.l2}
+                          accentColor={row.color}
+                          availableWidth={mmWidth}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 11, color: T.textFaint }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
-        {/* ── Legend ── */}
+        {/* ── Footer note ── */}
         <div style={{
-          marginTop: 24, padding: '14px 16px',
-          borderRadius: 10, border: `1px solid ${T.border}`,
-          display: 'flex', flexDirection: 'column', gap: 8,
+          marginTop: 14, padding: '0 2px',
+          display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: T.textFaint, textTransform: 'uppercase' }}>
-            操作
+          <span style={{ fontSize: 10.5, color: T.textFaint }}>
+            前两级用表格 · 第三级用脑图
           </span>
-          {[
-            ['▶', '点击板块名称 — 折叠/展开子任务列表'],
-            ['脑图', '点击含「脑图」标签的子项 — 展开内嵌思维导图'],
-          ].map(([tag, desc]) => (
-            <div key={tag} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{
-                fontSize: 10, fontWeight: 700,
-                color: T.textSub, minWidth: 28, textAlign: 'center',
-                padding: '1px 5px', borderRadius: 4, border: `1px solid ${T.border}`,
-              }}>
-                {tag}
-              </span>
-              <span style={{ fontSize: 12, color: T.textFaint }}>{desc}</span>
-            </div>
-          ))}
+          <span style={{ fontSize: 10.5, color: T.textFaint }}>·</span>
+          <span style={{ fontSize: 10.5, color: T.textFaint }}>
+            Presented with OpenXmind
+          </span>
         </div>
 
       </div>

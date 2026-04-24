@@ -1,13 +1,13 @@
-// Muted-vibrant accents — saturated enough to read, restrained enough not to shout
+// Sophisticated muted accents — warm earth tones, not saturated primaries
 export const ACCENTS = [
-  '#7B7CEB', // indigo
-  '#E86F9E', // rose
-  '#3DBFA6', // teal
-  '#E8A93A', // amber
+  '#3E9E8C', // muted teal
+  '#8F6BB0', // muted violet
+  '#6DA84E', // sage green
+  '#C08C3A', // warm amber
 ];
 
 export const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  todo:  { color: '#48485E', label: '待办'   },
-  doing: { color: '#7B7CEB', label: '进行中' },
-  done:  { color: '#3DBFA6', label: '完成'   },
+  todo:  { color: '#AAAABB', label: '待办'   },
+  doing: { color: '#5580C0', label: '进行中' },
+  done:  { color: '#3E9E8C', label: '完成'   },
 };
