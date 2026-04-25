@@ -46,7 +46,8 @@ function flatten(data: MindNode): FlatRow[] {
 // ── Helper components ────────────────────────────────────────────────────────
 
 const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
-  const s = STATUS_CONFIG[status ?? 'todo'];
+  if (!status) return null;
+  const s = STATUS_CONFIG[status];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5 }}>
       <div
@@ -75,10 +76,12 @@ const Chip: React.FC<{ name: string; color: string }> = ({ name, color }) => (
 const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
   const rows = flatten(data);
 
-  // Overall completion
-  const total = rows.length;
-  const done  = rows.filter(r => r.l2.status === 'done').length;
+  // Overall completion — only shown when nodes carry status metadata
+  const statusRows = rows.filter(r => r.l2.status);
+  const done  = statusRows.filter(r => r.l2.status === 'done').length;
+  const total = statusRows.length;
   const pct   = total > 0 ? done / total : 0;
+  const showProgress = total > 0;
 
   // Mindmap column available width ≈ 46% of table - cell padding
   const tableW  = Math.min(MAX_W, typeof window !== 'undefined' ? window.innerWidth - 32 : 488);
@@ -107,19 +110,21 @@ const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
           }}>
             {data.title}
           </div>
-          {/* Overall progress */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.09)', borderRadius: 2 }}>
-              <div style={{
-                height: '100%', width: `${pct * 100}%`,
-                background: 'linear-gradient(90deg, #3E9E8C 0%, #6DA84E 100%)',
-                borderRadius: 2, transition: 'width 0.9s ease',
-              }} />
+          {/* Overall progress — hidden when no status metadata */}
+          {showProgress && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.09)', borderRadius: 2 }}>
+                <div style={{
+                  height: '100%', width: `${pct * 100}%`,
+                  background: 'linear-gradient(90deg, #3E9E8C 0%, #6DA84E 100%)',
+                  borderRadius: 2, transition: 'width 0.9s ease',
+                }} />
+              </div>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
+                {done} / {total} 完成
+              </span>
             </div>
-            <span style={{ fontSize: 11.5, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
-              {done} / {total} 完成
-            </span>
-          </div>
+          )}
         </div>
 
         {/* ── Tree Table ── */}
@@ -195,29 +200,32 @@ const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
                         fontSize: 12.5, fontWeight: 500,
                         color: T.text, lineHeight: 1.4,
                         wordBreak: 'keep-all', overflowWrap: 'break-word',
-                        marginBottom: 5,
+                        marginBottom: (row.l2.status || row.l2.owner) ? 5 : 0,
                       }}>
                         {row.l2.title}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {/* Inline status dot (no "StatusDot" wrapper margin) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <div
-                            className={row.l2.status === 'doing' ? 'pulse' : ''}
-                            style={{
-                              width: 5, height: 5, borderRadius: '50%',
-                              background: STATUS_CONFIG[row.l2.status ?? 'todo'].color,
-                            }}
-                          />
-                          <span style={{
-                            fontSize: 10, fontWeight: 600,
-                            color: STATUS_CONFIG[row.l2.status ?? 'todo'].color,
-                          }}>
-                            {STATUS_CONFIG[row.l2.status ?? 'todo'].label}
-                          </span>
+                      {(row.l2.status || row.l2.owner) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {row.l2.status && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <div
+                                className={row.l2.status === 'doing' ? 'pulse' : ''}
+                                style={{
+                                  width: 5, height: 5, borderRadius: '50%',
+                                  background: STATUS_CONFIG[row.l2.status].color,
+                                }}
+                              />
+                              <span style={{
+                                fontSize: 10, fontWeight: 600,
+                                color: STATUS_CONFIG[row.l2.status].color,
+                              }}>
+                                {STATUS_CONFIG[row.l2.status].label}
+                              </span>
+                            </div>
+                          )}
+                          {row.l2.owner && <Chip name={row.l2.owner} color={row.color} />}
                         </div>
-                        {row.l2.owner && <Chip name={row.l2.owner} color={row.color} />}
-                      </div>
+                      )}
                     </td>
 
                     {/* ── L3 / MindMap cell ── */}
