@@ -149,8 +149,24 @@ interface Props {
 }
 
 const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
-  const [focused, setFocused] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [pasteState, setPasteState] = useState<'idle' | 'ok' | 'denied'>('idle');
+  const [copied,     setCopied]     = useState(false);
+  const isEmpty = !markdown.trim();
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      onChange(text);
+      setPasteState('ok');
+      setTimeout(() => setPasteState('idle'), 1800);
+    } catch {
+      // Permission denied or API unavailable — fall back to a visible hint
+      setPasteState('denied');
+      setTimeout(() => setPasteState('idle'), 2500);
+    }
+  };
+
+  const handleClear = () => onChange('');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(markdown).then(() => {
@@ -163,42 +179,69 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
     <div style={{ background: T.pageBg, minHeight: '100vh', padding: '24px 8px 60px' }}>
       <div style={{ maxWidth: 520, margin: '0 auto' }}>
 
-        {/* Header */}
-        <div style={{ padding: '0 2px 18px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '1.4px',
-              color: T.textFaint, textTransform: 'uppercase', marginBottom: 7,
-            }}>
-              OpenXmind · Markdown
-            </div>
-            <div style={{ fontSize: 13, color: T.textSub, lineHeight: 1.5 }}>
-              输入 Markdown，实时生成树状表格
-            </div>
+        {/* ── Header ── */}
+        <div style={{ padding: '0 2px 18px' }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '1.4px',
+            color: T.textFaint, textTransform: 'uppercase', marginBottom: 7,
+          }}>
+            OpenXmind · Markdown
           </div>
+          <div style={{ fontSize: 13, color: T.textSub, lineHeight: 1.5 }}>
+            Markdown 转树状表格
+          </div>
+        </div>
+
+        {/* ── Primary action bar ── */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+
+          {/* 快速粘贴 — primary */}
           <button
-            onClick={handleCopy}
+            onClick={handlePaste}
             style={{
-              marginTop: 2, padding: '6px 14px', borderRadius: 8,
+              flex: 1, padding: '13px 0', borderRadius: 14,
+              border: 'none',
+              background: pasteState === 'ok'    ? '#3E9E8C'
+                        : pasteState === 'denied' ? '#C08C3A'
+                        : '#1A181E',
+              color: '#fff',
+              fontSize: 14, fontWeight: 700, cursor: 'pointer',
+              boxShadow: '0 3px 12px rgba(0,0,0,0.18)',
+              transition: 'background 0.2s, transform 0.1s',
+              letterSpacing: '-0.2px',
+            }}
+            onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+            onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+          >
+            {pasteState === 'ok'    ? '✓ 已粘贴'
+           : pasteState === 'denied' ? '请允许访问剪贴板'
+           : '快速粘贴'}
+          </button>
+
+          {/* 清除 — secondary, only meaningful when there's content */}
+          <button
+            onClick={handleClear}
+            disabled={isEmpty}
+            style={{
+              padding: '13px 20px', borderRadius: 14,
               border: `1px solid ${T.border}`,
-              background: copied ? '#3E9E8C18' : T.surface,
-              color: copied ? '#3E9E8C' : T.textSub,
-              fontSize: 11.5, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
+              background: T.surface,
+              color: isEmpty ? T.textFaint : T.textSub,
+              fontSize: 13, fontWeight: 600, cursor: isEmpty ? 'default' : 'pointer',
+              transition: 'color 0.15s',
+              flexShrink: 0,
             }}
           >
-            {copied ? '✓ 已复制' : '复制'}
+            清除
           </button>
         </div>
 
-        {/* ── Editable input ── */}
+        {/* ── Raw text (collapsible feel: small by default, scrollable) ── */}
         <div style={{
           borderRadius: 14, overflow: 'hidden',
-          border: `1px solid ${focused ? T.borderFocus : T.border}`,
-          boxShadow: focused
-            ? `0 0 0 3px ${T.borderFocus}22, 0 2px 12px rgba(0,0,0,0.06)`
-            : '0 2px 8px rgba(0,0,0,0.05)',
+          border: `1px solid ${T.border}`,
           background: T.surfaceAlt,
-          transition: 'border-color 0.15s, box-shadow 0.15s',
+          marginBottom: 14,
         }}>
           <div style={{
             padding: '9px 14px', borderBottom: `1px solid ${T.border}`,
@@ -206,54 +249,74 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
             color: T.textFaint, textTransform: 'uppercase',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
-            <span>Markdown 输入</span>
-            <span style={{ fontWeight: 400, letterSpacing: 0, fontSize: 10, textTransform: 'none' }}>
-              可直接粘贴
-            </span>
+            <span>Markdown</span>
+            {!isEmpty && (
+              <button
+                onClick={handleCopy}
+                style={{
+                  padding: '2px 10px', borderRadius: 6,
+                  border: `1px solid ${T.border}`,
+                  background: copied ? '#3E9E8C18' : 'transparent',
+                  color: copied ? '#3E9E8C' : T.textFaint,
+                  fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                  transition: 'all 0.15s', textTransform: 'none', letterSpacing: 0,
+                }}
+              >
+                {copied ? '✓ 已复制' : '复制'}
+              </button>
+            )}
           </div>
-          <textarea
-            value={markdown}
-            onChange={e => onChange(e.target.value)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            spellCheck={false}
-            style={{
-              display: 'block', width: '100%',
-              minHeight: 200, maxHeight: 400,
-              margin: 0, padding: '14px 16px',
-              border: 'none', outline: 'none', resize: 'vertical',
-              background: 'transparent',
-              fontSize: 11, lineHeight: 1.75, color: T.textSub,
-              fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-              overflowY: 'auto',
-            }}
-          />
+          {isEmpty ? (
+            <div style={{
+              padding: '24px 16px', textAlign: 'center',
+              fontSize: 12, color: T.textFaint, lineHeight: 1.7,
+            }}>
+              点击「快速粘贴」导入 Markdown
+              <br />
+              <span style={{ fontSize: 10.5 }}>
+                # 根节点 · ## 一级 · ### 二级 · - 叶子
+              </span>
+            </div>
+          ) : (
+            <textarea
+              value={markdown}
+              onChange={e => onChange(e.target.value)}
+              spellCheck={false}
+              style={{
+                display: 'block', width: '100%',
+                minHeight: 120, maxHeight: 260,
+                margin: 0, padding: '12px 16px',
+                border: 'none', outline: 'none', resize: 'vertical',
+                background: 'transparent',
+                fontSize: 11, lineHeight: 1.75, color: T.textSub,
+                fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+                overflowY: 'auto',
+              }}
+            />
+          )}
         </div>
 
         {/* ── Live preview ── */}
-        <div style={{
-          marginTop: 14, borderRadius: 14, overflow: 'hidden',
-          border: `1px solid ${T.border}`,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05)',
-          background: T.surface,
-        }}>
+        {!isEmpty && (
           <div style={{
-            padding: '9px 14px', borderBottom: `1px solid ${T.border}`,
-            fontSize: 10, fontWeight: 700, letterSpacing: '1.2px',
-            color: T.textFaint, textTransform: 'uppercase',
+            borderRadius: 14, overflow: 'hidden',
+            border: `1px solid ${T.border}`,
+            boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05)',
+            background: T.surface,
           }}>
-            预览
+            <div style={{
+              padding: '9px 14px', borderBottom: `1px solid ${T.border}`,
+              fontSize: 10, fontWeight: 700, letterSpacing: '1.2px',
+              color: T.textFaint, textTransform: 'uppercase',
+            }}>
+              预览
+            </div>
+            <div style={{ padding: '18px 20px 22px' }}>
+              <Preview markdown={markdown} />
+            </div>
           </div>
-          <div style={{ padding: '18px 20px 22px' }}>
-            <Preview markdown={markdown} />
-          </div>
-        </div>
+        )}
 
-        <div style={{ marginTop: 12, padding: '0 2px' }}>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>
-            # 根节点 · ## 一级 · ### 二级 · - 叶子 · [done/doing/todo] @负责人
-          </span>
-        </div>
       </div>
     </div>
   );
