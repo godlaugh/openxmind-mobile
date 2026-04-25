@@ -8,8 +8,8 @@ const T = {
   pageBg:    '#EDECEA',
   surface:   '#FFFFFF',
   surfaceAlt:'#F7F6F3',
-  border:    'rgba(0,0,0,0.09)',
-  borderSub: 'rgba(0,0,0,0.055)',
+  border:    'rgba(0,0,0,0.06)',
+  borderSub: 'rgba(0,0,0,0.035)',
   text:      '#1A181E',
   textSub:   '#65657A',
   textFaint: '#AAAABB',
@@ -115,7 +115,7 @@ const TreeTable: React.FC<Props> = ({
   // MiniMindMap gets 46% of the real measured container width
   const mmWidth = Math.max(80, Math.floor(tableW * 0.46) - 16);
 
-  const secTop   = (c: string) => `2px solid ${c}`;
+  const secTop   = (c: string) => `2px solid ${c}60`;
   const inner    = `1px solid ${T.border}`;
   const innerSub = `1px solid ${T.borderSub}`;
 
@@ -125,8 +125,12 @@ const TreeTable: React.FC<Props> = ({
     try {
       const el  = captureRef.current;
       const url = fmt === 'png'
-        ? await toPng(el,  { pixelRatio: 2, backgroundColor: T.pageBg })
-        : await toSvg(el,  { backgroundColor: T.pageBg });
+        ? await toPng(el, { pixelRatio: 2, backgroundColor: T.pageBg })
+        : await toSvg(el, {
+            backgroundColor: T.pageBg,
+            width: el.offsetWidth,
+            height: el.offsetHeight,
+          });
       const a   = document.createElement('a');
       a.href    = url;
       a.download = `${data.title || 'openxmind'}.${fmt}`;
@@ -228,9 +232,9 @@ const TreeTable: React.FC<Props> = ({
         <div
           ref={captureRef}
           style={{
-            borderRadius: 14, overflow: 'hidden',
+            overflow: 'hidden',
             border: inner,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05)',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
           }}
         >
           <table style={{
