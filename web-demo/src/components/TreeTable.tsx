@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { toPng, toSvg } from 'html-to-image';
 import type { MindNode } from '../types';
-import { ACCENTS, MONO_ACCENT, STATUS_CONFIG } from '../constants/colors';
+import { ACCENTS, MONO_PALETTES, STATUS_CONFIG } from '../constants/colors';
 import MiniMindMap from './MiniMindMap';
 
 const T = {
@@ -24,10 +24,11 @@ interface FlatRow {
   color: string;
 }
 
-function flatten(data: MindNode, mono: boolean): FlatRow[] {
+// monoColor=null → multi-color mode; monoColor=string → single color for all rows
+function flatten(data: MindNode, monoColor: string | null): FlatRow[] {
   const rows: FlatRow[] = [];
   (data.children ?? []).forEach((l1, idx) => {
-    const color = mono ? MONO_ACCENT : ACCENTS[idx % ACCENTS.length];
+    const color = monoColor ?? ACCENTS[idx % ACCENTS.length];
     const l2s   = l1.children ?? [];
     if (!l2s.length) {
       rows.push({ l1, l1Span: 1, isFirstInL1: true, l2: l1, color });
@@ -40,7 +41,6 @@ function flatten(data: MindNode, mono: boolean): FlatRow[] {
   return rows;
 }
 
-// Status shown as a pure symbol — no separate dot, just the glyph with its color
 const StatusBadge: React.FC<{ status?: string; size?: number }> = ({ status, size = 11 }) => {
   if (!status) return null;
   const s = STATUS_CONFIG[status];
@@ -68,15 +68,20 @@ const Chip: React.FC<{ name: string; color: string }> = ({ name, color }) => (
 interface Props {
   data: MindNode;
   colorMode: 'multi' | 'mono';
+  monoColor: string;
   onToggleColorMode: () => void;
+  onSelectMonoColor: (c: string) => void;
 }
 
-const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
+const TreeTable: React.FC<Props> = ({
+  data, colorMode, monoColor, onToggleColorMode, onSelectMonoColor,
+}) => {
   const captureRef  = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<'svg' | 'png' | null>(null);
 
-  const mono = colorMode === 'mono';
-  const rows = flatten(data, mono);
+  const mono        = colorMode === 'mono';
+  const activeColor = mono ? monoColor : null;
+  const rows        = flatten(data, activeColor);
 
   const statusRows   = rows.filter(r => r.l2.status);
   const done         = statusRows.filter(r => r.l2.status === 'done').length;
@@ -95,13 +100,12 @@ const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
     if (!captureRef.current || exporting) return;
     setExporting(fmt);
     try {
-      const el   = captureRef.current;
-      const opts = { backgroundColor: T.pageBg, style: { borderRadius: '14px' } };
-      const url  = fmt === 'png'
-        ? await toPng(el,  { ...opts, pixelRatio: 2 })
-        : await toSvg(el,  opts);
-      const a    = document.createElement('a');
-      a.href     = url;
+      const el  = captureRef.current;
+      const url = fmt === 'png'
+        ? await toPng(el,  { pixelRatio: 2, backgroundColor: T.pageBg })
+        : await toSvg(el,  { backgroundColor: T.pageBg });
+      const a   = document.createElement('a');
+      a.href    = url;
       a.download = `${data.title || 'openxmind'}.${fmt}`;
       a.click();
     } finally {
@@ -109,7 +113,7 @@ const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
     }
   };
 
-  const btnBase: React.CSSProperties = {
+  const btnSm: React.CSSProperties = {
     padding: '5px 13px', borderRadius: 8, border: `1px solid ${T.border}`,
     background: T.surface, color: T.textSub,
     fontSize: 11.5, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
@@ -121,28 +125,56 @@ const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
 
         {/* ── Page header ── */}
         <div style={{ padding: '0 2px 18px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 7 }}>
+
+          {/* Top row: eyebrow + toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <div style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '1.4px',
               color: T.textFaint, textTransform: 'uppercase',
             }}>
               OpenXmind · Mobile Demo
             </div>
-            {/* Color mode toggle */}
             <button
               onClick={onToggleColorMode}
               style={{
-                ...btnBase, padding: '3px 11px', fontSize: 11,
-                background: mono ? T.text : T.surface,
+                padding: '3px 12px', borderRadius: 20, border: 'none',
+                background: mono ? T.text : 'rgba(0,0,0,0.06)',
                 color: mono ? '#fff' : T.textSub,
-                border: `1px solid ${mono ? T.text : T.border}`,
-                borderRadius: 20, flexShrink: 0,
+                fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.2s', flexShrink: 0,
               }}
             >
-              {mono ? '单色 ●' : '彩色 ◉'}
+              {mono ? '单色' : '彩色'}
             </button>
           </div>
 
+          {/* Mono palette swatches — only visible in mono mode */}
+          {mono && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {MONO_PALETTES.map(p => {
+                const selected = monoColor === p.color;
+                return (
+                  <button
+                    key={p.color}
+                    title={p.name}
+                    onClick={() => onSelectMonoColor(p.color)}
+                    style={{
+                      width: 22, height: 22, borderRadius: '50%',
+                      background: p.color, border: 'none',
+                      cursor: 'pointer', flexShrink: 0,
+                      outline: selected ? `2.5px solid ${p.color}` : '2.5px solid transparent',
+                      outlineOffset: selected ? 2 : 0,
+                      boxShadow: selected ? `0 0 0 1px rgba(0,0,0,0.15)` : 'none',
+                      transform: selected ? 'scale(1.18)' : 'scale(1)',
+                      transition: 'all 0.15s ease',
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Title */}
           <div style={{
             fontSize: 26, fontWeight: 800, color: T.text,
             letterSpacing: '-0.6px', lineHeight: 1.1, marginBottom: 14,
@@ -150,13 +182,14 @@ const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
             {data.title}
           </div>
 
+          {/* Progress bar */}
           {showProgress && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.09)', borderRadius: 2 }}>
                 <div style={{
                   height: '100%', width: `${pct * 100}%`,
                   background: mono
-                    ? `linear-gradient(90deg, ${MONO_ACCENT} 0%, ${MONO_ACCENT}99 100%)`
+                    ? `${monoColor}`
                     : 'linear-gradient(90deg, #3E9E8C 0%, #6DA84E 100%)',
                   borderRadius: 2, transition: 'width 0.9s ease',
                 }} />
@@ -188,9 +221,9 @@ const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
             </colgroup>
             <tbody>
               {rows.map((row, i) => {
-                const isNew    = row.isFirstInL1;
+                const isNew     = row.isFirstInL1;
                 const topBorder = isNew ? secTop(row.color) : innerSub;
-                const hasMap   = !!row.l2.children?.length;
+                const hasMap    = !!row.l2.children?.length;
                 return (
                   <tr key={i}>
                     {isNew && (
@@ -273,18 +306,10 @@ const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
           <span style={{ fontSize: 10.5, color: T.textFaint, flex: 1 }}>
             Presented with OpenXmind
           </span>
-          <button
-            onClick={() => exportAs('svg')}
-            disabled={!!exporting}
-            style={{ ...btnBase, opacity: exporting === 'png' ? 0.4 : 1 }}
-          >
+          <button onClick={() => exportAs('svg')} disabled={!!exporting} style={{ ...btnSm, opacity: exporting === 'png' ? 0.4 : 1 }}>
             {exporting === 'svg' ? '…' : 'SVG ↓'}
           </button>
-          <button
-            onClick={() => exportAs('png')}
-            disabled={!!exporting}
-            style={{ ...btnBase, opacity: exporting === 'svg' ? 0.4 : 1 }}
-          >
+          <button onClick={() => exportAs('png')} disabled={!!exporting} style={{ ...btnSm, opacity: exporting === 'svg' ? 0.4 : 1 }}>
             {exporting === 'png' ? '…' : 'PNG ↓'}
           </button>
         </div>

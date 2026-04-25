@@ -3,6 +3,7 @@ import TreeTable from './components/TreeTable';
 import MarkdownView from './components/MarkdownView';
 import { sampleData } from './data/sampleData';
 import { treeToMarkdown, markdownToTree } from './utils/markdown';
+import { MONO_PALETTES } from './constants/colors';
 import type { MindNode } from './types';
 
 const T = {
@@ -13,10 +14,11 @@ const T = {
 };
 
 export default function App() {
-  const [view,      setView]      = useState<'table' | 'markdown'>('table');
-  const [tree,      setTree]      = useState<MindNode>(sampleData);
-  const [markdown,  setMarkdown]  = useState(() => treeToMarkdown(sampleData));
-  const [colorMode, setColorMode] = useState<'multi' | 'mono'>('multi');
+  const [view,       setView]       = useState<'table' | 'markdown'>('table');
+  const [tree,       setTree]       = useState<MindNode>(sampleData);
+  const [markdown,   setMarkdown]   = useState(() => treeToMarkdown(sampleData));
+  const [colorMode,  setColorMode]  = useState<'multi' | 'mono'>('multi');
+  const [monoColor,  setMonoColor]  = useState(MONO_PALETTES[0].color);
 
   const handleMarkdownChange = useCallback((md: string) => {
     setMarkdown(md);
@@ -33,7 +35,6 @@ export default function App() {
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Floating tab bar */}
       <div style={{
         position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
         zIndex: 100, display: 'flex', alignItems: 'center', gap: 2,
@@ -43,7 +44,6 @@ export default function App() {
       }}>
         {(['table', 'markdown'] as const).map(v => {
           const active = view === v;
-          const label  = v === 'table' ? '≡ 表格' : '# Markdown';
           return (
             <button key={v} onClick={() => handleViewChange(v)} style={{
               padding: '7px 18px', borderRadius: 20, border: 'none',
@@ -52,7 +52,7 @@ export default function App() {
               fontSize: 12.5, fontWeight: active ? 700 : 500,
               cursor: 'pointer', transition: 'all 0.18s ease',
             }}>
-              {label}
+              {v === 'table' ? '≡ 表格' : '# Markdown'}
             </button>
           );
         })}
@@ -60,7 +60,13 @@ export default function App() {
 
       <div style={{ paddingBottom: 72 }}>
         {view === 'table'
-          ? <TreeTable data={tree} colorMode={colorMode} onToggleColorMode={toggleColorMode} />
+          ? <TreeTable
+              data={tree}
+              colorMode={colorMode}
+              monoColor={monoColor}
+              onToggleColorMode={toggleColorMode}
+              onSelectMonoColor={setMonoColor}
+            />
           : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
         }
       </div>
