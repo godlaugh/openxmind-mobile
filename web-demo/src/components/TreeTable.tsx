@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { toPng, toSvg } from 'html-to-image';
 import type { MindNode } from '../types';
 import { ACCENTS, MONO_PALETTES, STATUS_CONFIG } from '../constants/colors';
@@ -14,7 +14,9 @@ const T = {
   textSub:   '#65657A',
   textFaint: '#AAAABB',
 };
-const MAX_W = 520;
+
+// Responsive max width: wider on landscape/tablet
+const clampW = (vw: number) => Math.min(Math.max(vw - 32, 280), 760);
 
 interface FlatRow {
   l1: MindNode;
@@ -24,7 +26,6 @@ interface FlatRow {
   color: string;
 }
 
-// monoColor=null → multi-color mode; monoColor=string → single color for all rows
 function flatten(data: MindNode, monoColor: string | null): FlatRow[] {
   const rows: FlatRow[] = [];
   (data.children ?? []).forEach((l1, idx) => {
@@ -76,8 +77,30 @@ interface Props {
 const TreeTable: React.FC<Props> = ({
   data, colorMode, monoColor, onToggleColorMode, onSelectMonoColor,
 }) => {
-  const captureRef  = useRef<HTMLDivElement>(null);
-  const [exporting, setExporting] = useState<'svg' | 'png' | null>(null);
+  const captureRef = useRef<HTMLDivElement>(null);
+  const tableRef   = useRef<HTMLDivElement>(null);
+  const [exporting,  setExporting]  = useState<'svg' | 'png' | null>(null);
+  const [tableW,     setTableW]     = useState(() =>
+    typeof window !== 'undefined' ? clampW(window.innerWidth) : 480
+  );
+
+  // Re-measure on resize and orientation change using the actual container width
+  useEffect(() => {
+    const measure = () => {
+      if (tableRef.current) {
+        setTableW(tableRef.current.offsetWidth);
+      } else {
+        setTableW(clampW(window.innerWidth));
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, []);
 
   const mono        = colorMode === 'mono';
   const activeColor = mono ? monoColor : null;
@@ -89,14 +112,14 @@ const TreeTable: React.FC<Props> = ({
   const pct          = total > 0 ? done / total : 0;
   const showProgress = total > 0;
 
-  const tableW  = Math.min(MAX_W, typeof window !== 'undefined' ? window.innerWidth - 32 : 488);
-  const mmWidth = Math.floor(tableW * 0.46) - 14;
+  // MiniMindMap gets 46% of the real measured container width
+  const mmWidth = Math.max(80, Math.floor(tableW * 0.46) - 16);
 
   const secTop   = (c: string) => `2px solid ${c}`;
   const inner    = `1px solid ${T.border}`;
   const innerSub = `1px solid ${T.borderSub}`;
 
-  const exportAs = async (fmt: 'svg' | 'png') => {
+  const exportAs = useCallback(async (fmt: 'svg' | 'png') => {
     if (!captureRef.current || exporting) return;
     setExporting(fmt);
     try {
@@ -111,7 +134,7 @@ const TreeTable: React.FC<Props> = ({
     } finally {
       setExporting(null);
     }
-  };
+  }, [exporting, data.title]);
 
   const btnSm: React.CSSProperties = {
     padding: '5px 13px', borderRadius: 8, border: `1px solid ${T.border}`,
@@ -120,8 +143,8 @@ const TreeTable: React.FC<Props> = ({
   };
 
   return (
-    <div style={{ background: T.pageBg, minHeight: '100vh', padding: '24px 8px 60px' }}>
-      <div style={{ maxWidth: MAX_W, margin: '0 auto' }}>
+    <div style={{ background: T.pageBg, minHeight: '100vh', padding: '24px 16px 60px' }}>
+      <div ref={tableRef} style={{ maxWidth: 760, margin: '0 auto' }}>
 
         {/* ── Page header ── */}
         <div style={{ padding: '0 2px 18px' }}>
@@ -148,7 +171,7 @@ const TreeTable: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Mono palette swatches — only visible in mono mode */}
+          {/* Mono palette swatches */}
           {mono && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               {MONO_PALETTES.map(p => {
@@ -176,7 +199,7 @@ const TreeTable: React.FC<Props> = ({
 
           {/* Title */}
           <div style={{
-            fontSize: 26, fontWeight: 800, color: T.text,
+            fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: T.text,
             letterSpacing: '-0.6px', lineHeight: 1.1, marginBottom: 14,
           }}>
             {data.title}
