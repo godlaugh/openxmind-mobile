@@ -72,10 +72,11 @@ interface Props {
   monoColor: string;
   onToggleColorMode: () => void;
   onSelectMonoColor: (c: string) => void;
+  onOpenTemplatePicker: () => void;
 }
 
 const TreeTable: React.FC<Props> = ({
-  data, colorMode, monoColor, onToggleColorMode, onSelectMonoColor,
+  data, colorMode, monoColor, onToggleColorMode, onSelectMonoColor, onOpenTemplatePicker,
 }) => {
   const captureRef = useRef<HTMLDivElement>(null);
   const tableRef   = useRef<HTMLDivElement>(null);
@@ -201,12 +202,23 @@ const TreeTable: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Title */}
-          <div style={{
-            fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: T.text,
-            letterSpacing: '-0.6px', lineHeight: 1.1, marginBottom: 14,
-          }}>
-            {data.title}
+          {/* Title — tappable to open template picker */}
+          <div
+            onClick={onOpenTemplatePicker}
+            style={{
+              display: 'inline-flex', alignItems: 'baseline', gap: 6,
+              cursor: 'pointer', marginBottom: 14,
+            }}
+          >
+            <span style={{
+              fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 800, color: T.text,
+              letterSpacing: '-0.6px', lineHeight: 1.1,
+            }}>
+              {data.title}
+            </span>
+            <span style={{ fontSize: 13, color: T.textFaint, lineHeight: 1, userSelect: 'none' }}>
+              ⌄
+            </span>
           </div>
 
           {/* Progress bar */}

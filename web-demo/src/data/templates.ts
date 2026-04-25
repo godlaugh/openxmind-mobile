@@ -3,11 +3,15 @@ import agent from '../templates/AI Agent 漫游指南.md?raw';
 
 export interface Template {
   id:       string;
-  label:    string;
+  title:    string;
   markdown: string;
 }
 
+function extractTitle(md: string): string {
+  return md.match(/^#\s+(.+)/m)?.[1]?.trim() ?? 'Untitled';
+}
+
 export const TEMPLATES: Template[] = [
-  { id: 'plan',  label: '产品计划',  markdown: plan  },
-  { id: 'agent', label: 'Agent 指南', markdown: agent },
+  { id: 'plan',  title: extractTitle(plan),  markdown: plan  },
+  { id: 'agent', title: extractTitle(agent), markdown: agent },
 ];
