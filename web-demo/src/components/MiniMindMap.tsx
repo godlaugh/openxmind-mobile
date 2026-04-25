@@ -8,7 +8,7 @@ interface Props {
 }
 
 // Compact dimensions suited for embedding in a table cell
-const NW = 56, NH = 21, HG = 13, VG = 9, PAD = 7;
+const NW = 76, NH = 22, HG = 10, VG = 8, PAD = 7;
 const RC = 2; // root dot radius — replaces the repeated L2 title rect
 
 function leaves(n: MindNode): number {
@@ -66,8 +66,8 @@ function draw(nl: NodeLayout, accent: string, depth: number, out: React.ReactEle
   const tColor = isChild ? accent : '#8888A0';
   const fw     = isChild ? 550 : 400;
 
-  const raw   = nl.node.title;
-  const label = raw.length > 6 ? raw.slice(0, 5) + '…' : raw;
+  const raw   = nl.node.title.replace(/<br\s*\/?>/gi, ' ').trim();
+  const label = raw.length > 9 ? raw.slice(0, 8) + '…' : raw;
 
   out.push(
     <rect key={`r-${nl.node.id}`}

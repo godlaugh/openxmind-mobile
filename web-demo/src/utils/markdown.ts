@@ -69,6 +69,8 @@ function parseMeta(text: string): { title: string; status?: MindNode['status']; 
   const sMatch = text.match(/\[(todo|doing|done)\]/i);
   const oMatch = text.match(/@(\S+)/);
   const title  = text
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
     .replace(/\[(todo|doing|done)\]/gi, '')
     .replace(/@\S+/g, '')
     .trim();
