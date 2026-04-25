@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import { prepareWithSegments, layoutWithLines, measureNaturalWidth } from '@chenglou/pretext';
+import type { PreparedTextWithSegments } from '@chenglou/pretext';
 import type { MindNode } from '../types';
 
 interface Props {
@@ -17,71 +19,70 @@ interface NL {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const FONT      = 9.5;
-const NW_PARENT = 68;   // fixed width for nodes that have children (text wraps)
+const NW_PARENT = 68;   // fixed width for nodes that have children
 const NH        = 22;   // minimum node height
 const LINE_H    = 13;   // line-height for wrapped text
 const PAD_X     = 6;    // horizontal text padding inside node
-const PAD_Y     = 3;    // vertical text padding for multi-line nodes
+const PAD_Y     = 3;    // vertical padding for multi-line nodes
 const HG        = 10;   // gap between columns
 const VG        = 7;    // gap between sibling rows
 const PAD       = 7;    // SVG outer padding
 const RC        = 2;    // root dot radius
 
-// ── Text helpers ─────────────────────────────────────────────────────────────
-function charW(ch: string): number {
-  const c = ch.charCodeAt(0);
-  // CJK + full-width characters take one full em
-  return (c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xF900 && c <= 0xFAFF) ||
-         (c >= 0xFF00 && c <= 0xFF60) || (c >= 0x3000 && c <= 0x303F)
-    ? FONT : FONT * 0.6;
-}
-function textW(s: string): number { return [...s].reduce((w, c) => w + charW(c), 0); }
-
-function wrapText(text: string, maxW: number): string[] {
-  if (textW(text) <= maxW) return [text];
-  const lines: string[] = [];
-  let line = '', lw = 0;
-  for (const ch of [...text]) {
-    const cw = charW(ch);
-    if (lw + cw > maxW && line) { lines.push(line); line = ch; lw = cw; }
-    else { line += ch; lw += cw; }
-  }
-  if (line) lines.push(line);
-  return lines;
+// ── Pretext measurement cache ─────────────────────────────────────────────────
+// prepareWithSegments() calls canvas.measureText — expensive. Cache by key.
+const preparedCache = new Map<string, PreparedTextWithSegments>();
+function getCachedPrepared(text: string, fs: string): PreparedTextWithSegments {
+  const key = `${fs}::${text}`;
+  let p = preparedCache.get(key);
+  if (!p) { p = prepareWithSegments(text, fs); preparedCache.set(key, p); }
+  return p;
 }
 
+// Font string must exactly match the SVG <text> fontFamily + fontSize + fontWeight
+function fontStr(depth: number): string {
+  return `${depth === 1 ? 550 : 400} ${FONT}px system-ui, sans-serif`;
+}
+
+// ── Text helpers ──────────────────────────────────────────────────────────────
 function clean(node: MindNode): string {
   return node.title.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').trim();
 }
 
 // ── Node dimension computation ────────────────────────────────────────────────
-// Leaf nodes: natural width (no truncation), single line
-// Non-leaf nodes: fixed NW_PARENT, text wraps vertically
-function dim(node: MindNode): { w: number; h: number; lines: string[] } {
+function dim(node: MindNode, depth: number): { w: number; h: number; lines: string[] } {
   const title   = clean(node);
   const hasKids = (node.children?.length ?? 0) > 0;
+  const fs      = fontStr(depth);
+
+  // Empty title guard — don't pass empty string to canvas
+  if (title === '') return { w: hasKids ? NW_PARENT : 36, h: NH, lines: [''] };
 
   if (!hasKids) {
-    const tw = textW(title);
+    // Leaf node: natural width, no truncation
+    const p  = getCachedPrepared(title, fs);
+    const tw = measureNaturalWidth(p);
     return { w: Math.max(36, Math.ceil(tw) + PAD_X * 2), h: NH, lines: [title] };
   }
 
-  const lines = wrapText(title, NW_PARENT - PAD_X * 2);
-  const h     = lines.length === 1
+  // Parent node: fixed NW_PARENT, pretext handles wrapping + Intl.Segmenter breaks
+  const p           = getCachedPrepared(title, fs);
+  const { lines }   = layoutWithLines(p, NW_PARENT - PAD_X * 2, LINE_H);
+  const lineTexts   = lines.length > 0 ? lines.map(l => l.text) : [title];
+  const h           = lineTexts.length === 1
     ? NH
-    : Math.max(NH, PAD_Y * 2 + lines.length * LINE_H);
-  return { w: NW_PARENT, h, lines };
+    : Math.max(NH, PAD_Y * 2 + lineTexts.length * LINE_H);
+  return { w: NW_PARENT, h, lines: lineTexts };
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────────
-// subtreeH: total vertical pixels consumed by a node and all its descendants
 function subtreeH(node: MindNode, depth: number): number {
   if (depth === 0) {
     if (!node.children?.length) return 0;
     return node.children.reduce((s, c, i) =>
       s + subtreeH(c, 1) + (i > 0 ? VG : 0), 0);
   }
-  const { h } = dim(node);
+  const { h } = dim(node, depth);
   if (!node.children?.length) return h;
   const childH = node.children.reduce((s, c, i) =>
     s + subtreeH(c, depth + 1) + (i > 0 ? VG : 0), 0);
@@ -103,7 +104,7 @@ function buildLayout(node: MindNode, x: number, yTop: number, depth: number): NL
     return nl;
   }
 
-  const d = dim(node);
+  const d  = dim(node, depth);
   const sH = subtreeH(node, depth);
   const nl: NL = { node, x, y: yTop + (sH - d.h) / 2, w: d.w, h: d.h, lines: d.lines, children: [] };
 
@@ -164,18 +165,19 @@ function drawNode(nl: NL, accent: string, depth: number, out: React.ReactElement
     out.push(
       <text key={`t-${nl.node.id}`}
         x={nl.x + nl.w / 2} y={nl.y + nl.h / 2 + FONT * 0.38}
-        textAnchor="middle" fontSize={FONT} fontWeight={fw} fill={tColor}
+        textAnchor="middle" fontSize={FONT} fontWeight={fw}
+        fontFamily="system-ui, sans-serif" fill={tColor}
       >
         {nl.lines[0]}
       </text>
     );
   } else {
-    // Vertically center the text block inside the node
     const blockH = (nl.lines.length - 1) * LINE_H + FONT;
     const startY = nl.y + (nl.h - blockH) / 2 + FONT * 0.8;
     out.push(
       <text key={`t-${nl.node.id}`} textAnchor="middle"
-        fontSize={FONT} fontWeight={fw} fill={tColor}
+        fontSize={FONT} fontWeight={fw}
+        fontFamily="system-ui, sans-serif" fill={tColor}
       >
         {nl.lines.map((line, i) => (
           <tspan key={i} x={nl.x + nl.w / 2} y={startY + i * LINE_H}>{line}</tspan>
