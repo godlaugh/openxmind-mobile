@@ -9,7 +9,7 @@ interface Props {
 
 // Compact dimensions suited for embedding in a table cell
 const NW = 56, NH = 21, HG = 13, VG = 9, PAD = 7;
-const RC = 7; // root dot radius — replaces the repeated L2 title rect
+const RC = 2; // root dot radius — replaces the repeated L2 title rect
 
 function leaves(n: MindNode): number {
   if (!n.children?.length) return 1;
