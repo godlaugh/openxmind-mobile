@@ -13,24 +13,23 @@ const T = {
 };
 
 export default function App() {
-  const [view,     setView]     = useState<'table' | 'markdown'>('table');
-  const [tree,     setTree]     = useState<MindNode>(sampleData);
-  const [markdown, setMarkdown] = useState(() => treeToMarkdown(sampleData));
+  const [view,      setView]      = useState<'table' | 'markdown'>('table');
+  const [tree,      setTree]      = useState<MindNode>(sampleData);
+  const [markdown,  setMarkdown]  = useState(() => treeToMarkdown(sampleData));
+  const [colorMode, setColorMode] = useState<'multi' | 'mono'>('multi');
 
-  // Markdown edited → update tree; tree unchanged so table reflects edits on next switch
   const handleMarkdownChange = useCallback((md: string) => {
     setMarkdown(md);
     setTree(markdownToTree(md));
   }, []);
 
-  // Switching table → markdown: regenerate Markdown from current tree
-  // Switching markdown → table: tree is already kept in sync by handleMarkdownChange
   const handleViewChange = (v: 'table' | 'markdown') => {
-    if (v === 'markdown' && view === 'table') {
-      setMarkdown(treeToMarkdown(tree));
-    }
+    if (v === 'markdown' && view === 'table') setMarkdown(treeToMarkdown(tree));
     setView(v);
   };
+
+  const toggleColorMode = () =>
+    setColorMode(m => m === 'multi' ? 'mono' : 'multi');
 
   return (
     <div style={{ position: 'relative' }}>
@@ -52,7 +51,6 @@ export default function App() {
               color: active ? '#fff' : T.textSub,
               fontSize: 12.5, fontWeight: active ? 700 : 500,
               cursor: 'pointer', transition: 'all 0.18s ease',
-              letterSpacing: active ? '-0.1px' : '0',
             }}>
               {label}
             </button>
@@ -62,7 +60,7 @@ export default function App() {
 
       <div style={{ paddingBottom: 72 }}>
         {view === 'table'
-          ? <TreeTable data={tree} />
+          ? <TreeTable data={tree} colorMode={colorMode} onToggleColorMode={toggleColorMode} />
           : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
         }
       </div>

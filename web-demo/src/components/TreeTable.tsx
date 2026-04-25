@@ -1,38 +1,35 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
+import { toPng, toSvg } from 'html-to-image';
 import type { MindNode } from '../types';
-import { ACCENTS, STATUS_CONFIG } from '../constants/colors';
+import { ACCENTS, MONO_ACCENT, STATUS_CONFIG } from '../constants/colors';
 import MiniMindMap from './MiniMindMap';
 
-// ── Design tokens ────────────────────────────────────────────────────────────
 const T = {
-  pageBg:   '#EDECEA',
-  surface:  '#FFFFFF',
-  surfaceAlt: '#F7F6F3',
-  border:   'rgba(0,0,0,0.09)',
-  borderSub:'rgba(0,0,0,0.055)',
-  text:     '#1A181E',
-  textSub:  '#65657A',
-  textFaint:'#AAAABB',
+  pageBg:    '#EDECEA',
+  surface:   '#FFFFFF',
+  surfaceAlt:'#F7F6F3',
+  border:    'rgba(0,0,0,0.09)',
+  borderSub: 'rgba(0,0,0,0.055)',
+  text:      '#1A181E',
+  textSub:   '#65657A',
+  textFaint: '#AAAABB',
 };
 const MAX_W = 520;
 
-// ── Row flattening ───────────────────────────────────────────────────────────
-// Converts nested tree into flat table rows, with rowSpan for parent cells.
 interface FlatRow {
   l1: MindNode;
-  l1Span: number;     // rowSpan of the L1 cell
+  l1Span: number;
   isFirstInL1: boolean;
   l2: MindNode;
   color: string;
 }
 
-function flatten(data: MindNode): FlatRow[] {
+function flatten(data: MindNode, mono: boolean): FlatRow[] {
   const rows: FlatRow[] = [];
   (data.children ?? []).forEach((l1, idx) => {
-    const color = ACCENTS[idx % ACCENTS.length];
+    const color = mono ? MONO_ACCENT : ACCENTS[idx % ACCENTS.length];
     const l2s   = l1.children ?? [];
     if (!l2s.length) {
-      // L1 has no children — single row, L2 = L1
       rows.push({ l1, l1Span: 1, isFirstInL1: true, l2: l1, color });
     } else {
       l2s.forEach((l2, j) => {
@@ -43,28 +40,24 @@ function flatten(data: MindNode): FlatRow[] {
   return rows;
 }
 
-// ── Helper components ────────────────────────────────────────────────────────
-
-const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
+// Status shown as a pure symbol — no separate dot, just the glyph with its color
+const StatusBadge: React.FC<{ status?: string; size?: number }> = ({ status, size = 11 }) => {
   if (!status) return null;
   const s = STATUS_CONFIG[status];
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5 }}>
-      <div
-        className={status === 'doing' ? 'pulse' : ''}
-        style={{ width: 5, height: 5, borderRadius: '50%', background: s.color, flexShrink: 0 }}
-      />
-      <span style={{ fontSize: 10, fontWeight: 600, color: s.color, letterSpacing: '0.15px' }}>
-        {s.label}
-      </span>
-    </div>
+    <span
+      className={status === 'doing' ? 'pulse' : ''}
+      style={{ fontSize: size, fontWeight: 700, color: s.color, letterSpacing: '0.2px' }}
+    >
+      {s.label}
+    </span>
   );
 };
 
 const Chip: React.FC<{ name: string; color: string }> = ({ name, color }) => (
   <div style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: 19, height: 19, borderRadius: '50%',
+    width: 18, height: 18, borderRadius: '50%',
     background: color + '1C', border: `1px solid ${color}3E`,
     fontSize: 9, fontWeight: 700, color,
   }}>
@@ -72,25 +65,55 @@ const Chip: React.FC<{ name: string; color: string }> = ({ name, color }) => (
   </div>
 );
 
-// ── Main component ───────────────────────────────────────────────────────────
-const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
-  const rows = flatten(data);
+interface Props {
+  data: MindNode;
+  colorMode: 'multi' | 'mono';
+  onToggleColorMode: () => void;
+}
 
-  // Overall completion — only shown when nodes carry status metadata
-  const statusRows = rows.filter(r => r.l2.status);
-  const done  = statusRows.filter(r => r.l2.status === 'done').length;
-  const total = statusRows.length;
-  const pct   = total > 0 ? done / total : 0;
+const TreeTable: React.FC<Props> = ({ data, colorMode, onToggleColorMode }) => {
+  const captureRef  = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState<'svg' | 'png' | null>(null);
+
+  const mono = colorMode === 'mono';
+  const rows = flatten(data, mono);
+
+  const statusRows   = rows.filter(r => r.l2.status);
+  const done         = statusRows.filter(r => r.l2.status === 'done').length;
+  const total        = statusRows.length;
+  const pct          = total > 0 ? done / total : 0;
   const showProgress = total > 0;
 
-  // Mindmap column available width ≈ 46% of table - cell padding
   const tableW  = Math.min(MAX_W, typeof window !== 'undefined' ? window.innerWidth - 32 : 488);
   const mmWidth = Math.floor(tableW * 0.46) - 14;
 
-  // ── Section border helpers ───────────────────────────────────────────────
-  const secTop = (color: string) => `2px solid ${color}`;
-  const inner  = `1px solid ${T.border}`;
+  const secTop   = (c: string) => `2px solid ${c}`;
+  const inner    = `1px solid ${T.border}`;
   const innerSub = `1px solid ${T.borderSub}`;
+
+  const exportAs = async (fmt: 'svg' | 'png') => {
+    if (!captureRef.current || exporting) return;
+    setExporting(fmt);
+    try {
+      const el   = captureRef.current;
+      const opts = { backgroundColor: T.pageBg, style: { borderRadius: '14px' } };
+      const url  = fmt === 'png'
+        ? await toPng(el,  { ...opts, pixelRatio: 2 })
+        : await toSvg(el,  opts);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `${data.title || 'openxmind'}.${fmt}`;
+      a.click();
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const btnBase: React.CSSProperties = {
+    padding: '5px 13px', borderRadius: 8, border: `1px solid ${T.border}`,
+    background: T.surface, color: T.textSub,
+    fontSize: 11.5, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+  };
 
   return (
     <div style={{ background: T.pageBg, minHeight: '100vh', padding: '24px 8px 60px' }}>
@@ -98,69 +121,83 @@ const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
 
         {/* ── Page header ── */}
         <div style={{ padding: '0 2px 18px' }}>
-          <div style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '1.4px',
-            color: T.textFaint, textTransform: 'uppercase', marginBottom: 7,
-          }}>
-            OpenXmind · Mobile Demo
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 7 }}>
+            <div style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: '1.4px',
+              color: T.textFaint, textTransform: 'uppercase',
+            }}>
+              OpenXmind · Mobile Demo
+            </div>
+            {/* Color mode toggle */}
+            <button
+              onClick={onToggleColorMode}
+              style={{
+                ...btnBase, padding: '3px 11px', fontSize: 11,
+                background: mono ? T.text : T.surface,
+                color: mono ? '#fff' : T.textSub,
+                border: `1px solid ${mono ? T.text : T.border}`,
+                borderRadius: 20, flexShrink: 0,
+              }}
+            >
+              {mono ? '单色 ●' : '彩色 ◉'}
+            </button>
           </div>
+
           <div style={{
             fontSize: 26, fontWeight: 800, color: T.text,
             letterSpacing: '-0.6px', lineHeight: 1.1, marginBottom: 14,
           }}>
             {data.title}
           </div>
-          {/* Overall progress — hidden when no status metadata */}
+
           {showProgress && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.09)', borderRadius: 2 }}>
                 <div style={{
                   height: '100%', width: `${pct * 100}%`,
-                  background: 'linear-gradient(90deg, #3E9E8C 0%, #6DA84E 100%)',
+                  background: mono
+                    ? `linear-gradient(90deg, ${MONO_ACCENT} 0%, ${MONO_ACCENT}99 100%)`
+                    : 'linear-gradient(90deg, #3E9E8C 0%, #6DA84E 100%)',
                   borderRadius: 2, transition: 'width 0.9s ease',
                 }} />
               </div>
               <span style={{ fontSize: 11.5, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
-                {done} / {total} 完成
+                {done} / {total} ✓
               </span>
             </div>
           )}
         </div>
 
-        {/* ── Tree Table ── */}
-        <div style={{
-          borderRadius: 14, overflow: 'hidden',
-          border: inner,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05)',
-        }}>
+        {/* ── Tree Table (capture target) ── */}
+        <div
+          ref={captureRef}
+          style={{
+            borderRadius: 14, overflow: 'hidden',
+            border: inner,
+            boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05)',
+          }}
+        >
           <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            background: T.surface,
-            tableLayout: 'fixed',
+            width: '100%', borderCollapse: 'collapse',
+            background: T.surface, tableLayout: 'fixed',
           }}>
             <colgroup>
-              {/* L1 category  |  L2 sub-item  |  L3 mindmap */}
               <col style={{ width: '22%' }} />
               <col style={{ width: '32%' }} />
               <col style={{ width: '46%' }} />
             </colgroup>
-
             <tbody>
               {rows.map((row, i) => {
-                const isNew = row.isFirstInL1;
+                const isNew    = row.isFirstInL1;
                 const topBorder = isNew ? secTop(row.color) : innerSub;
-                const hasMap    = !!row.l2.children?.length;
-
+                const hasMap   = !!row.l2.children?.length;
                 return (
                   <tr key={i}>
-                    {/* ── L1 cell (rowSpan = number of L2 children) ── */}
                     {isNew && (
                       <td
                         rowSpan={row.l1Span}
                         style={{
-                          verticalAlign: 'middle',
-                          textAlign: 'center',
+                          verticalAlign: 'middle', textAlign: 'center',
                           padding: '14px 8px',
                           background: row.color + '13',
                           borderLeft: `3.5px solid ${row.color}`,
@@ -170,78 +207,53 @@ const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
                         }}
                       >
                         <div style={{
-                          fontSize: 12, fontWeight: 800,
-                          color: row.color, lineHeight: 1.35,
-                          letterSpacing: '-0.1px',
-                          wordBreak: 'keep-all',
-                          overflowWrap: 'break-word',
+                          fontSize: 12, fontWeight: 800, color: row.color,
+                          lineHeight: 1.35, letterSpacing: '-0.1px',
+                          wordBreak: 'keep-all', overflowWrap: 'break-word',
                         }}>
                           {row.l1.title}
                         </div>
-                        <StatusDot status={row.l1.status} />
+                        {row.l1.status && (
+                          <div style={{ marginTop: 5 }}>
+                            <StatusBadge status={row.l1.status} size={12} />
+                          </div>
+                        )}
                         {row.l1.owner && (
-                          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 7 }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 6 }}>
                             <Chip name={row.l1.owner} color={row.color} />
                           </div>
                         )}
                       </td>
                     )}
 
-                    {/* ── L2 cell ── */}
                     <td style={{
-                      verticalAlign: 'middle',
-                      padding: '10px 12px',
+                      verticalAlign: 'middle', padding: '10px 12px',
                       background: T.surface,
-                      borderRight: inner,
-                      borderTop: topBorder,
-                      borderBottom: innerSub,
+                      borderRight: inner, borderTop: topBorder, borderBottom: innerSub,
                     }}>
                       <div style={{
-                        fontSize: 12.5, fontWeight: 500,
-                        color: T.text, lineHeight: 1.4,
-                        wordBreak: 'keep-all', overflowWrap: 'break-word',
-                        marginBottom: (row.l2.status || row.l2.owner) ? 5 : 0,
+                        fontSize: 12.5, fontWeight: 500, color: T.text,
+                        lineHeight: 1.4, wordBreak: 'keep-all', overflowWrap: 'break-word',
+                        marginBottom: (row.l2.status || row.l2.owner) ? 4 : 0,
                       }}>
                         {row.l2.title}
                       </div>
                       {(row.l2.status || row.l2.owner) && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {row.l2.status && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <div
-                                className={row.l2.status === 'doing' ? 'pulse' : ''}
-                                style={{
-                                  width: 5, height: 5, borderRadius: '50%',
-                                  background: STATUS_CONFIG[row.l2.status].color,
-                                }}
-                              />
-                              <span style={{
-                                fontSize: 10, fontWeight: 600,
-                                color: STATUS_CONFIG[row.l2.status].color,
-                              }}>
-                                {STATUS_CONFIG[row.l2.status].label}
-                              </span>
-                            </div>
-                          )}
+                          <StatusBadge status={row.l2.status} />
                           {row.l2.owner && <Chip name={row.l2.owner} color={row.color} />}
                         </div>
                       )}
                     </td>
 
-                    {/* ── L3 / MindMap cell ── */}
                     <td style={{
                       verticalAlign: 'middle',
                       padding: hasMap ? '7px 8px' : '10px 12px',
                       background: hasMap ? row.color + '07' : T.surfaceAlt,
-                      borderTop: topBorder,
-                      borderBottom: innerSub,
+                      borderTop: topBorder, borderBottom: innerSub,
                     }}>
                       {hasMap ? (
-                        <MiniMindMap
-                          node={row.l2}
-                          accentColor={row.color}
-                          availableWidth={mmWidth}
-                        />
+                        <MiniMindMap node={row.l2} accentColor={row.color} availableWidth={mmWidth} />
                       ) : (
                         <span style={{ fontSize: 11, color: T.textFaint }}>—</span>
                       )}
@@ -253,18 +265,28 @@ const TreeTable: React.FC<{ data: MindNode }> = ({ data }) => {
           </table>
         </div>
 
-        {/* ── Footer note ── */}
+        {/* ── Footer: branding + export ── */}
         <div style={{
           marginTop: 14, padding: '0 2px',
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>
-            前两级用表格 · 第三级用脑图
-          </span>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>·</span>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>
+          <span style={{ fontSize: 10.5, color: T.textFaint, flex: 1 }}>
             Presented with OpenXmind
           </span>
+          <button
+            onClick={() => exportAs('svg')}
+            disabled={!!exporting}
+            style={{ ...btnBase, opacity: exporting === 'png' ? 0.4 : 1 }}
+          >
+            {exporting === 'svg' ? '…' : 'SVG ↓'}
+          </button>
+          <button
+            onClick={() => exportAs('png')}
+            disabled={!!exporting}
+            style={{ ...btnBase, opacity: exporting === 'svg' ? 0.4 : 1 }}
+          >
+            {exporting === 'png' ? '…' : 'PNG ↓'}
+          </button>
         </div>
 
       </div>
