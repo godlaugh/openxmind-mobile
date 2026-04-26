@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const T = {
   pageBg:     '#EDECEA',
@@ -136,7 +136,16 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [pasteState,  setPasteState]  = useState<'idle'|'ok'|'denied'>('idle');
   const [copied,      setCopied]      = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isEmpty = !markdown.trim();
+
+  // Auto-grow textarea to fit content
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  }, [markdown]);
 
   const handlePaste = async () => {
     try {
@@ -159,16 +168,14 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
 
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column',
-      height: '100dvh',
       background: T.pageBg,
+      minHeight: '100vh',
       padding: '24px 16px 80px',
       boxSizing: 'border-box',
-      overflow: 'hidden',
     }}>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.4px', color: T.textFaint, textTransform: 'uppercase' }}>
             OpenXmind · Markdown
@@ -203,7 +210,7 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
       {!showPreview && (
         <>
           {/* Action bar */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button
               onClick={handlePaste}
               style={{
@@ -243,13 +250,14 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
             )}
           </div>
 
-          {/* Textarea — fills remaining height */}
-          <div style={{ flex: 1, minHeight: 0, borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.border}`, background: T.surface }}>
+          {/* Textarea — auto-grows with content, min fills screen */}
+          <div style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.border}`, background: T.surface }}>
             {isEmpty ? (
               <div
                 onClick={handlePaste}
                 style={{
-                  height: '100%', display: 'flex', flexDirection: 'column',
+                  minHeight: 'calc(100vh - 230px)',
+                  display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', gap: 10,
                 }}
@@ -264,14 +272,17 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
               </div>
             ) : (
               <textarea
+                ref={textareaRef}
                 value={markdown}
                 onChange={e => onChange(e.target.value)}
                 spellCheck={false}
                 style={{
-                  display: 'block', width: '100%', height: '100%',
+                  display: 'block', width: '100%', boxSizing: 'border-box',
+                  minHeight: 'calc(100vh - 230px)',
+                  height: 'auto', overflow: 'hidden',
                   margin: 0, padding: '16px',
                   border: 'none', outline: 'none', resize: 'none',
-                  background: 'transparent', boxSizing: 'border-box',
+                  background: 'transparent',
                   fontSize: 13, lineHeight: 1.75, color: T.textSub,
                   fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
                 }}
@@ -284,10 +295,10 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
       {/* ── Preview mode ── */}
       {showPreview && (
         <div style={{
-          flex: 1, minHeight: 0, overflowY: 'auto',
           borderRadius: 14, border: `1px solid ${T.border}`,
           background: T.surface,
           padding: '20px 20px 28px',
+          minHeight: 'calc(100vh - 150px)',
         }}>
           {isEmpty
             ? <div style={{ fontSize: 13, color: T.textFaint, textAlign: 'center', marginTop: 40 }}>暂无内容</div>
