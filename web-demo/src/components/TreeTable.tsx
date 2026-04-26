@@ -15,82 +15,114 @@ const T = {
   textFaint: '#AAAABB',
 };
 
-const clampW = (vw: number) => Math.min(Math.max(vw - 32, 280), 760);
+const clampW  = (vw: number) => Math.min(Math.max(vw - 32, 280), 760);
+const MAX_COLS = 4; // beyond this depth, last column shows MiniMindMap
 
-// ── Data model ────────────────────────────────────────────────────────────────
+// ── Tree measurement ──────────────────────────────────────────────────────────
+
+function nodeDepth(node: MindNode): number {
+  if (!node.children?.length) return 1;
+  return 1 + Math.max(...node.children.map(nodeDepth));
+}
+
+// How many table rows does this node occupy, given colsRemaining columns left?
+function rowCount(node: MindNode, colsRemaining: number): number {
+  if (colsRemaining <= 1 || !node.children?.length) return 1;
+  return node.children.reduce((s, c) => s + rowCount(c, colsRemaining - 1), 0);
+}
+
+// Collect all "row-defining" paths: every true leaf, or any node at depth numCols-1
+function collectPaths(
+  node:    MindNode,
+  depth:   number,
+  numCols: number,
+  color:   string,
+  prefix:  MindNode[],
+): { nodes: MindNode[]; color: string }[] {
+  const path = [...prefix, node];
+  if (depth === numCols - 1 || !node.children?.length) return [{ nodes: path, color }];
+  return node.children.flatMap(c => collectPaths(c, depth + 1, numCols, color, path));
+}
+
+// ── Flat row model ────────────────────────────────────────────────────────────
 //
-//  Each FlatRow maps to exactly one <tr>.
+//  Each FlatRow = one <tr>. Every cell records whether to emit a <td> (render flag).
+//  Cells with render=false are covered by a previous row's rowSpan — skip them.
 //
-//  L1 cell:  rendered only on isFirstL1 rows (rowSpan = l1Span)
-//  L2 cell:  rendered only on isFirstL2 rows (rowSpan = l2Span)
-//            when L2 has no L3 children → colSpan = 2 (absorbs the L3 column)
-//  L3 cell:  rendered on every row where l2ColSpan === 1
+//  Last cell in each path:
+//    - true leaf           → colSpan fills remaining columns, plain text
+//    - isTruncated (has children but at column limit) → MiniMindMap
+
+interface CellSpec {
+  node:        MindNode;
+  rowSpan:     number;
+  colSpan:     number;
+  render:      boolean;
+  isTruncated: boolean;
+}
 
 interface FlatRow {
-  color:      string;
-  l1:         MindNode;
-  l1Span:     number;
-  isFirstL1:  boolean;
-  l2:         MindNode;
-  l2Span:     number;
-  l2ColSpan:  1 | 2;   // 2 when L2 has no children
-  isFirstL2:  boolean;
-  l3?:        MindNode; // absent when l2ColSpan === 2
+  color: string;
+  cells: CellSpec[];
 }
 
-// Number of <tr> rows an L2 node occupies
-function l2RowCount(l2: MindNode): number {
-  const kids = l2.children ?? [];
-  return kids.length === 0 ? 1 : kids.length;
-}
+function buildFlatRows(
+  data:      MindNode,
+  monoColor: string | null,
+): { rows: FlatRow[]; numCols: number } {
+  const l1s = data.children ?? [];
+  if (!l1s.length) return { rows: [], numCols: 1 };
 
-function flatten(data: MindNode, monoColor: string | null): FlatRow[] {
-  const rows: FlatRow[] = [];
+  const actualDepth = Math.max(...l1s.map(n => nodeDepth(n)));
+  const numCols     = Math.min(actualDepth, MAX_COLS);
 
-  (data.children ?? []).forEach((l1, idx) => {
+  // All row-defining paths across the whole tree
+  const allPaths = l1s.flatMap((l1, idx) => {
     const color = monoColor ?? ACCENTS[idx % ACCENTS.length];
-    const l2s   = l1.children ?? [];
-
-    // L1 with no children: one row, L2 cell absorbs L3 column
-    if (l2s.length === 0) {
-      rows.push({
-        color, l1, l1Span: 1, isFirstL1: true,
-        l2: l1, l2Span: 1, l2ColSpan: 2, isFirstL2: true,
-      });
-      return;
-    }
-
-    const l1Span  = l2s.reduce((s, l2) => s + l2RowCount(l2), 0);
-    let   l1First = true;
-
-    l2s.forEach(l2 => {
-      const l3s    = l2.children ?? [];
-      const l2Span = l2RowCount(l2);
-
-      if (l3s.length === 0) {
-        // L2 leaf: colspan=2, one row
-        rows.push({
-          color,
-          l1, l1Span, isFirstL1: l1First,
-          l2, l2Span: 1, l2ColSpan: 2, isFirstL2: true,
-        });
-        l1First = false;
-      } else {
-        // L2 has L3 children: expand into multiple rows
-        l3s.forEach((l3, j) => {
-          rows.push({
-            color,
-            l1, l1Span, isFirstL1: l1First,
-            l2, l2Span, l2ColSpan: 1, isFirstL2: j === 0,
-            l3,
-          });
-          l1First = false;
-        });
-      }
-    });
+    return collectPaths(l1, 0, numCols, color, []);
   });
 
-  return rows;
+  // Second pass: assign render flags and spans
+  const lastSeen: (MindNode | null)[] = new Array(numCols).fill(null);
+
+  const rows: FlatRow[] = allPaths.map(({ nodes, color }) => {
+    const cells: CellSpec[] = nodes.map((node, d) => {
+      const isLast      = d === nodes.length - 1;
+      const hasKids     = !!node.children?.length;
+      const isTruncated = isLast && hasKids;
+      const render      = lastSeen[d] !== node;
+      if (render) lastSeen[d] = node;
+
+      return {
+        node,
+        rowSpan:     isLast ? 1 : rowCount(node, numCols - d),
+        colSpan:     isLast ? numCols - d : 1,
+        render,
+        isTruncated,
+      };
+    });
+    return { color, cells };
+  });
+
+  return { rows, numCols };
+}
+
+// ── Progress: collect every node that carries a status ────────────────────────
+function collectStatus(node: MindNode, out: MindNode[] = []): MindNode[] {
+  if (node.status) out.push(node);
+  (node.children ?? []).forEach(c => collectStatus(c, out));
+  return out;
+}
+
+// ── Column widths by number of columns ───────────────────────────────────────
+const COL_WIDTHS: Record<number, string[]> = {
+  1: ['100%'],
+  2: ['28%', '72%'],
+  3: ['20%', '30%', '50%'],
+  4: ['18%', '21%', '23%', '38%'],
+};
+function getColWidths(n: number): string[] {
+  return COL_WIDTHS[Math.min(n, MAX_COLS)] ?? COL_WIDTHS[MAX_COLS];
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -153,18 +185,20 @@ const TreeTable: React.FC<Props> = ({
 
   const mono        = colorMode === 'mono';
   const activeColor = mono ? monoColor : null;
-  const rows        = flatten(data, activeColor);
 
-  // Progress: count L2-level nodes with status (deduplicated)
-  const allL2       = (data.children ?? []).flatMap(l1 => l1.children?.length ? l1.children : [l1]);
-  const statusNodes = allL2.filter(n => n.status);
-  const done        = statusNodes.filter(n => n.status === 'done').length;
-  const total       = statusNodes.length;
+  const { rows, numCols } = buildFlatRows(data, activeColor);
+  const colWidths          = getColWidths(numCols);
+
+  // Progress across whole tree
+  const statusNodes  = collectStatus(data).filter(n => n !== data);
+  const done         = statusNodes.filter(n => n.status === 'done').length;
+  const total        = statusNodes.length;
   const showProgress = total > 0;
   const pct          = total > 0 ? done / total : 0;
 
-  // L3 column gets 50% of table width for MiniMindMap
-  const mmWidth = Math.max(80, Math.floor(tableW * 0.50) - 16);
+  // Last column width for MiniMindMap sizing
+  const lastColPct = parseFloat(colWidths[numCols - 1]) / 100;
+  const mmWidth    = Math.max(60, Math.floor(tableW * lastColPct) - 16);
 
   const secTop   = (c: string) => `2px solid ${c}60`;
   const inner    = `1px solid ${T.border}`;
@@ -203,15 +237,12 @@ const TreeTable: React.FC<Props> = ({
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.4px', color: T.textFaint, textTransform: 'uppercase' }}>
               OpenXmind · Mobile Demo
             </div>
-            <button
-              onClick={onToggleColorMode}
-              style={{
-                padding: '3px 12px', borderRadius: 20, border: 'none',
-                background: mono ? T.text : 'rgba(0,0,0,0.06)',
-                color: mono ? '#fff' : T.textSub,
-                fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
-              }}
-            >
+            <button onClick={onToggleColorMode} style={{
+              padding: '3px 12px', borderRadius: 20, border: 'none',
+              background: mono ? T.text : 'rgba(0,0,0,0.06)',
+              color: mono ? '#fff' : T.textSub,
+              fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
+            }}>
               {mono ? '单色' : '彩色'}
             </button>
           </div>
@@ -226,7 +257,7 @@ const TreeTable: React.FC<Props> = ({
                     cursor: 'pointer', flexShrink: 0,
                     outline: selected ? `2.5px solid ${p.color}` : '2.5px solid transparent',
                     outlineOffset: selected ? 2 : 0,
-                    boxShadow: selected ? `0 0 0 1px rgba(0,0,0,0.15)` : 'none',
+                    boxShadow: selected ? '0 0 0 1px rgba(0,0,0,0.15)' : 'none',
                     transform: selected ? 'scale(1.18)' : 'scale(1)',
                     transition: 'all 0.15s ease',
                   }} />
@@ -260,83 +291,82 @@ const TreeTable: React.FC<Props> = ({
         <div ref={captureRef} style={{ overflow: 'hidden', border: inner, boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', background: T.surface, tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '30%' }} />
-              <col style={{ width: '50%' }} />
+              {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
             </colgroup>
             <tbody>
-              {rows.map((row, i) => {
-                const { isFirstL1, isFirstL2, l2ColSpan, l3 } = row;
-
-                // Top border logic
-                const l1Top  = secTop(row.color);
-                const l2Top  = isFirstL1 ? secTop(row.color) : inner;
-                const l3Top  = isFirstL1 ? secTop(row.color) : isFirstL2 ? inner : innerSub;
-
-                const hasMap = !!l3?.children?.length;
+              {rows.map((row, ri) => {
+                const isFirstL1 = row.cells[0]?.render ?? false;
 
                 return (
-                  <tr key={i}>
+                  <tr key={ri}>
+                    {row.cells.map((cell, d) => {
+                      if (!cell.render) return null;
 
-                    {/* ── L1 cell (rowspan) ── */}
-                    {isFirstL1 && (
-                      <td rowSpan={row.l1Span} style={{
-                        verticalAlign: 'middle', textAlign: 'center', padding: '14px 8px',
-                        background: row.color + '13',
-                        borderLeft: `3.5px solid ${row.color}`,
-                        borderRight: inner, borderTop: l1Top, borderBottom: inner,
-                      }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: row.color, lineHeight: 1.35, letterSpacing: '-0.1px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-                          {row.l1.title}
-                        </div>
-                        {row.l1.status && <div style={{ marginTop: 5 }}><StatusBadge status={row.l1.status} size={12} /></div>}
-                        {row.l1.owner  && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 6 }}><Chip name={row.l1.owner} color={row.color} /></div>}
-                      </td>
-                    )}
+                      const isFirstCol  = d === 0;
+                      const isLastSlot  = d + cell.colSpan === numCols;
+                      const topBorder   = isFirstL1 ? secTop(row.color) : innerSub;
+                      const rightBorder = isLastSlot ? undefined : inner;
 
-                    {/* ── L2 cell (rowspan + optional colspan) ── */}
-                    {isFirstL2 && (
-                      <td rowSpan={row.l2Span} colSpan={l2ColSpan} style={{
-                        verticalAlign: 'middle', padding: '10px 12px',
-                        background: T.surface,
-                        borderRight: l2ColSpan === 1 ? inner : undefined,
-                        borderTop: l2Top, borderBottom: inner,
-                      }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 500, color: T.text, lineHeight: 1.4, wordBreak: 'keep-all', overflowWrap: 'break-word', marginBottom: (row.l2.status || row.l2.owner) ? 4 : 0 }}>
-                          {row.l2.title}
-                        </div>
-                        {(row.l2.status || row.l2.owner) && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <StatusBadge status={row.l2.status} />
-                            {row.l2.owner && <Chip name={row.l2.owner} color={row.color} />}
+                      // ── L1 column (leftmost) ──
+                      if (isFirstCol) {
+                        return (
+                          <td key={d} rowSpan={cell.rowSpan} style={{
+                            verticalAlign: 'middle', textAlign: 'center', padding: '14px 8px',
+                            background: row.color + '13',
+                            borderLeft: `3.5px solid ${row.color}`,
+                            borderRight: inner,
+                            borderTop: secTop(row.color),
+                            borderBottom: inner,
+                          }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 800, color: row.color, lineHeight: 1.35, letterSpacing: '-0.1px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
+                              {cell.node.title}
+                            </div>
+                            {cell.node.status && <div style={{ marginTop: 5 }}><StatusBadge status={cell.node.status} size={11} /></div>}
+                            {cell.node.owner  && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 5 }}><Chip name={cell.node.owner} color={row.color} /></div>}
+                          </td>
+                        );
+                      }
+
+                      // ── MiniMindMap cell (truncated node with children) ──
+                      if (cell.isTruncated) {
+                        return (
+                          <td key={d} rowSpan={cell.rowSpan} colSpan={cell.colSpan} style={{
+                            verticalAlign: 'middle', padding: '7px 8px',
+                            background: row.color + '07',
+                            borderRight: rightBorder, borderTop: topBorder, borderBottom: innerSub,
+                          }}>
+                            <MiniMindMap node={cell.node} accentColor={row.color} availableWidth={mmWidth} />
+                          </td>
+                        );
+                      }
+
+                      // ── Intermediate or leaf text cell ──
+                      const fw       = d === 1 ? 500 : 400;
+                      const fs       = d === 1 ? 12.5 : 12;
+                      const bg       = !cell.node.children?.length ? T.surfaceAlt : T.surface;
+
+                      return (
+                        <td key={d} rowSpan={cell.rowSpan} colSpan={cell.colSpan} style={{
+                          verticalAlign: 'middle', padding: '10px 12px',
+                          background: bg,
+                          borderRight: rightBorder, borderTop: topBorder, borderBottom: innerSub,
+                        }}>
+                          <div style={{
+                            fontSize: fs, fontWeight: fw, color: T.text,
+                            lineHeight: 1.4, wordBreak: 'keep-all', overflowWrap: 'break-word',
+                            marginBottom: (cell.node.status || cell.node.owner) ? 4 : 0,
+                          }}>
+                            {cell.node.title}
                           </div>
-                        )}
-                      </td>
-                    )}
-
-                    {/* ── L3 cell (only when L2 didn't absorb it with colspan=2) ── */}
-                    {l2ColSpan === 1 && (
-                      <td style={{
-                        verticalAlign: 'middle',
-                        padding: hasMap ? '7px 8px' : '10px 12px',
-                        background: hasMap ? row.color + '07' : T.surfaceAlt,
-                        borderTop: l3Top, borderBottom: innerSub,
-                      }}>
-                        {hasMap ? (
-                          <MiniMindMap node={l3!} accentColor={row.color} availableWidth={mmWidth} />
-                        ) : (
-                          <div style={{ fontSize: 12, color: T.text, lineHeight: 1.4, wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-                            {l3!.title}
-                            {(l3!.status || l3!.owner) && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                                <StatusBadge status={l3!.status} />
-                                {l3!.owner && <Chip name={l3!.owner} color={row.color} />}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    )}
+                          {(cell.node.status || cell.node.owner) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <StatusBadge status={cell.node.status} size={10} />
+                              {cell.node.owner && <Chip name={cell.node.owner} color={row.color} />}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}
