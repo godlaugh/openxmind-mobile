@@ -1,11 +1,11 @@
 {
   "name": "web-demo",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm version patch --no-git-tag-version && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

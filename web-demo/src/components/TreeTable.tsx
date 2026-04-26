@@ -343,7 +343,7 @@ const TreeTable: React.FC<Props> = ({
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span style={{ fontSize: 10.5, color: T.textFaint, flex: 1 }}>
-            OpenXmind · v{__APP_VERSION__} · {new Date(__BUILD_TIME__).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            OpenXmind · v{__APP_VERSION__}-{__GIT_HASH__} · {new Date(__BUILD_TIME__).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
           </span>
           <button onClick={() => exportAs('svg')} disabled={!!exporting} style={{ ...btnSm, opacity: exporting === 'png' ? 0.4 : 1 }}>
             {exporting === 'svg' ? '…' : 'SVG ↓'}
