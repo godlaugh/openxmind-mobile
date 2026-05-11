@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import TreeTable from './components/TreeTable';
 import MarkdownView from './components/MarkdownView';
+import FullMindMap from './components/FullMindMap';
 import { TEMPLATES } from './data/templates';
 import { markdownToTree } from './utils/markdown';
 import { MONO_PALETTES } from './constants/colors';
@@ -20,7 +21,7 @@ const initialMd   = TEMPLATES[0].markdown;
 const initialTree = markdownToTree(initialMd);
 
 export default function App() {
-  const [view,         setView]         = useState<'table' | 'markdown'>('table');
+  const [view,         setView]         = useState<'table' | 'markdown' | 'mindmap'>('table');
   const [tree,         setTree]         = useState<MindNode>(initialTree);
   const [markdown,     setMarkdown]     = useState(initialMd);
   const [templateIdx,  setTemplateIdx]  = useState(0);
@@ -131,35 +132,44 @@ export default function App() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08)',
         border: `1px solid ${T.border}`,
       }}>
-        {(['table', 'markdown'] as const).map(v => {
+        {([
+          ['table',    '≡ 表格'],
+          ['mindmap',  '◎ 脑图'],
+          ['markdown', '# Markdown'],
+        ] as const).map(([v, label]) => {
           const active = view === v;
           return (
             <button key={v} onClick={() => setView(v)} style={{
-              padding: '7px 18px', borderRadius: 20, border: 'none',
+              padding: '7px 16px', borderRadius: 20, border: 'none',
               background: active ? T.accent : 'transparent',
               color: active ? '#fff' : T.textSub,
               fontSize: 12.5, fontWeight: active ? 700 : 500,
               cursor: 'pointer', transition: 'all 0.18s ease',
             }}>
-              {v === 'table' ? '≡ 表格' : '# Markdown'}
+              {label}
             </button>
           );
         })}
       </div>
 
-      <div style={{ paddingBottom: 72 }}>
-        {view === 'table'
-          ? <TreeTable
-              data={tree}
-              colorMode={colorMode}
-              monoColor={monoColor}
-              onToggleColorMode={toggleColorMode}
-              onSelectMonoColor={setMonoColor}
-              onOpenTemplatePicker={() => setShowPicker(true)}
-            />
-          : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
-        }
-      </div>
+      {view === 'mindmap'
+        ? <FullMindMap data={tree} />
+        : (
+          <div style={{ paddingBottom: 72 }}>
+            {view === 'table'
+              ? <TreeTable
+                  data={tree}
+                  colorMode={colorMode}
+                  monoColor={monoColor}
+                  onToggleColorMode={toggleColorMode}
+                  onSelectMonoColor={setMonoColor}
+                  onOpenTemplatePicker={() => setShowPicker(true)}
+                />
+              : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
+            }
+          </div>
+        )
+      }
     </div>
   );
 }
