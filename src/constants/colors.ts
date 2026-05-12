@@ -1,7 +1,21 @@
-export const LEVEL1_COLORS = ['#6366F1', '#EC4899', '#10B981', '#F59E0B'];
+export const ACCENTS = [
+  '#3E9E8C',
+  '#8F6BB0',
+  '#6DA84E',
+  '#C08C3A',
+];
 
-export const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  todo:  { color: '#94A3B8', bg: '#F1F5F9', label: '待办' },
-  doing: { color: '#3B82F6', bg: '#EFF6FF', label: '进行中' },
-  done:  { color: '#10B981', bg: '#ECFDF5', label: '已完成' },
+export const MONO_PALETTES: { name: string; color: string }[] = [
+  { name: '墨蓝', color: '#1B365D' },
+  { name: '松绿', color: '#1C3D2A' },
+  { name: '紫砂', color: '#3A1F58' },
+  { name: '砖红', color: '#6B2323' },
+  { name: '暖炭', color: '#2A2520' },
+  { name: '赭棕', color: '#5C3418' },
+];
+
+export const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
+  todo:  { color: '#AAAABB', label: '○' },
+  doing: { color: '#5580C0', label: '◑' },
+  done:  { color: '#3E9E8C', label: '✓' },
 };
