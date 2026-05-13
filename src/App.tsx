@@ -17,99 +17,269 @@ const T = {
   accent:    '#3E9E8C',
 };
 
-const initialMd   = TEMPLATES[0].markdown;
-const initialTree = markdownToTree(initialMd);
+type DocSource = 'none' | 'template' | 'file';
+interface RecentFile { name: string; ts: number; }
+const RECENT_KEY = 'oxm-recent-v1';
+
+function loadRecent(): RecentFile[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); }
+  catch { return []; }
+}
+function addRecent(name: string) {
+  const next = [{ name, ts: Date.now() }, ...loadRecent().filter(r => r.name !== name)].slice(0, 5);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+}
+
+async function pickMdFile(): Promise<{ content: string; name: string; handle?: unknown } | null> {
+  if ('showOpenFilePicker' in window) {
+    try {
+      const [handle] = await (window as any).showOpenFilePicker({
+        types: [{ description: 'Markdown files', accept: { 'text/plain': ['.md'] } }],
+        multiple: false,
+      });
+      const file = await handle.getFile();
+      return { content: await file.text(), name: file.name, handle };
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return null;
+    }
+  }
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.md';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      resolve(file ? { content: await file.text(), name: file.name } : null);
+    };
+    input.click();
+  });
+}
 
 export default function App() {
-  const [view,         setView]         = useState<'table' | 'markdown' | 'mindmap'>('table');
-  const [tree,         setTree]         = useState<MindNode>(initialTree);
-  const [markdown,     setMarkdown]     = useState(initialMd);
-  const [templateIdx,  setTemplateIdx]  = useState(0);
-  const [showPicker,   setShowPicker]   = useState(false);
-  const [colorMode,    setColorMode]    = useState<'multi' | 'mono'>('multi');
-  const [monoColor,    setMonoColor]    = useState(MONO_PALETTES[0].color);
+  const [view,        setView]        = useState<'table' | 'markdown' | 'mindmap'>('table');
+  const [tree,        setTree]        = useState<MindNode>(() => markdownToTree(TEMPLATES[0].markdown));
+  const [markdown,    setMarkdown]    = useState(TEMPLATES[0].markdown);
+  const [docSource,   setDocSource]   = useState<DocSource>('none');
+  const [templateIdx, setTemplateIdx] = useState(0);
+  const [fileName,    setFileName]    = useState('');
+  const [fileHandle,  setFileHandle]  = useState<any>(null);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(loadRecent);
+  const [showHub,     setShowHub]     = useState(false);
+  const [colorMode,   setColorMode]   = useState<'multi' | 'mono'>('multi');
+  const [monoColor,   setMonoColor]   = useState(MONO_PALETTES[0].color);
+
+  const applyMd = useCallback((md: string) => {
+    setMarkdown(md);
+    setTree(markdownToTree(md));
+  }, []);
 
   const handleMarkdownChange = useCallback((md: string) => {
     setMarkdown(md);
     setTree(markdownToTree(md));
   }, []);
 
-  const handleTemplateSelect = (idx: number) => {
-    if (idx !== templateIdx) {
-      const md = TEMPLATES[idx].markdown;
-      setTemplateIdx(idx);
-      setMarkdown(md);
-      setTree(markdownToTree(md));
-    }
-    setShowPicker(false);
+  const selectTemplate = (idx: number) => {
+    setTemplateIdx(idx);
+    setDocSource('template');
+    setFileName('');
+    setFileHandle(null);
+    applyMd(TEMPLATES[idx].markdown);
+    setShowHub(false);
   };
 
-  const toggleColorMode = () =>
-    setColorMode(m => m === 'multi' ? 'mono' : 'multi');
+  const openFile = useCallback(async () => {
+    const result = await pickMdFile();
+    if (!result) return;
+    setDocSource('file');
+    setFileName(result.name);
+    setFileHandle((result as any).handle ?? null);
+    applyMd(result.content);
+    addRecent(result.name);
+    setRecentFiles(loadRecent());
+    setShowHub(false);
+  }, [applyMd]);
 
+  const reloadFile = useCallback(async () => {
+    if (!fileHandle) return;
+    const file = await fileHandle.getFile();
+    applyMd(await file.text());
+  }, [fileHandle, applyMd]);
+
+  const toggleColorMode = () => setColorMode(m => m === 'multi' ? 'mono' : 'multi');
+
+  // ── Landing screen ──────────────────────────────────────────────
+  if (docSource === 'none') {
+    return (
+      <div style={{
+        minHeight: '100svh', background: T.pageBg,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: '0 32px',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: 52 }}>
+          <div style={{ fontSize: 34, fontWeight: 800, color: T.text, letterSpacing: '-1px' }}>
+            OpenXmind
+          </div>
+          <div style={{ fontSize: 14, color: T.textSub, marginTop: 8 }}>
+            把 Markdown 变成思维导图
+          </div>
+        </div>
+
+        <button onClick={openFile} style={{
+          width: '100%', maxWidth: 300, marginBottom: 28,
+          padding: '17px 24px',
+          background: T.text, color: '#fff',
+          border: 'none', borderRadius: 16,
+          fontSize: 16, fontWeight: 700, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          WebkitTapHighlightColor: 'transparent',
+        }}>
+          <span style={{ fontSize: 18 }}>📂</span>
+          打开 .md 文件
+        </button>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          width: '100%', maxWidth: 300, marginBottom: 16,
+        }}>
+          <div style={{ flex: 1, height: 1, background: 'rgba(0,0,0,0.1)' }} />
+          <span style={{ fontSize: 11, color: T.textFaint, fontWeight: 600 }}>或从模板开始</span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(0,0,0,0.1)' }} />
+        </div>
+
+        <div style={{ width: '100%', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {TEMPLATES.map((tpl, idx) => (
+            <button key={tpl.id} onClick={() => selectTemplate(idx)} style={{
+              width: '100%', padding: '14px 18px',
+              background: T.surface, border: `1px solid ${T.border}`,
+              borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+              fontSize: 14, fontWeight: 500, color: T.text,
+              WebkitTapHighlightColor: 'transparent',
+            }}>
+              {tpl.title}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main app ────────────────────────────────────────────────────
   return (
     <div style={{ position: 'relative' }}>
 
-      {/* ── Template picker sheet ── */}
-      {showPicker && (
-        <div
-          onClick={() => setShowPicker(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 200,
-            background: 'rgba(0,0,0,0.35)',
-            backdropFilter: 'blur(2px)',
-            WebkitBackdropFilter: 'blur(2px)',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', bottom: 0, left: 0, right: 0,
-              background: T.pageBg,
-              borderRadius: '20px 20px 0 0',
-              paddingBottom: 'env(safe-area-inset-bottom, 20px)',
-              boxShadow: '0 -4px 32px rgba(0,0,0,0.12)',
-            }}
-          >
+      {/* ── Document hub sheet ── */}
+      {showHub && (
+        <div onClick={() => setShowHub(false)} style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            background: T.pageBg, borderRadius: '20px 20px 0 0',
+            paddingBottom: 'env(safe-area-inset-bottom, 20px)',
+            boxShadow: '0 -4px 32px rgba(0,0,0,0.12)',
+            maxHeight: '80vh', overflowY: 'auto',
+          }}>
             <div style={{
               width: 36, height: 4, borderRadius: 2,
-              background: 'rgba(0,0,0,0.18)',
-              margin: '12px auto 20px',
+              background: 'rgba(0,0,0,0.18)', margin: '12px auto 20px',
             }} />
+
+            {/* Current file + reload (when a file is open) */}
+            {docSource === 'file' && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '0 16px 16px',
+              }}>
+                <span style={{ fontSize: 14 }}>📄</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: T.textSub }}>
+                  {fileName}
+                </span>
+                {fileHandle && (
+                  <button onClick={() => { void reloadFile(); setShowHub(false); }} style={{
+                    padding: '6px 14px', borderRadius: 8, border: `1px solid ${T.border}`,
+                    background: T.surface, color: T.textSub,
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}>
+                    ↻ 重新加载
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Open file card */}
+            <div style={{ padding: '0 16px 16px' }}>
+              <button onClick={openFile} style={{
+                width: '100%', padding: '16px 18px',
+                background: T.surface, border: `1.5px dashed rgba(0,0,0,0.18)`,
+                borderRadius: 14, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 12,
+                WebkitTapHighlightColor: 'transparent',
+              }}>
+                <span style={{ fontSize: 24 }}>📂</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>从 Files 选择 .md</div>
+                  <div style={{ fontSize: 11.5, color: T.textFaint, marginTop: 2 }}>iCloud · 本地 · 云盘</div>
+                </div>
+              </button>
+            </div>
+
+            {/* Recent files */}
+            {recentFiles.length > 0 && (
+              <>
+                <div style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '1.2px',
+                  color: T.textFaint, textTransform: 'uppercase',
+                  padding: '4px 22px 10px',
+                }}>最近打开</div>
+                {recentFiles.map(rf => {
+                  const active = docSource === 'file' && rf.name === fileName;
+                  return (
+                    <button key={rf.name} onClick={openFile} style={{
+                      display: 'flex', alignItems: 'center',
+                      width: '100%', padding: '13px 22px',
+                      background: active ? 'rgba(62,158,140,0.07)' : 'transparent',
+                      border: 'none', borderTop: '1px solid rgba(0,0,0,0.06)',
+                      cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                    }}>
+                      <span style={{ fontSize: 14, marginRight: 10 }}>📄</span>
+                      <span style={{ flex: 1, fontSize: 14, color: T.text, textAlign: 'left' }}>
+                        {rf.name}
+                      </span>
+                      {active && <span style={{ fontSize: 16, color: T.accent, fontWeight: 700 }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Templates */}
             <div style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '1.2px',
               color: T.textFaint, textTransform: 'uppercase',
-              padding: '0 22px 10px',
-            }}>
-              切换模板
-            </div>
+              padding: `${recentFiles.length > 0 ? 16 : 4}px 22px 10px`,
+            }}>模板</div>
             {TEMPLATES.map((tpl, idx) => {
-              const active = idx === templateIdx;
+              const active = docSource === 'template' && idx === templateIdx;
               return (
-                <button
-                  key={tpl.id}
-                  onClick={() => handleTemplateSelect(idx)}
-                  style={{
-                    display: 'flex', alignItems: 'center',
-                    width: '100%', padding: '15px 22px',
-                    background: active ? 'rgba(62,158,140,0.07)' : 'transparent',
-                    border: 'none',
-                    borderTop: '1px solid rgba(0,0,0,0.06)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
+                <button key={tpl.id} onClick={() => selectTemplate(idx)} style={{
+                  display: 'flex', alignItems: 'center',
+                  width: '100%', padding: '15px 22px',
+                  background: active ? 'rgba(62,158,140,0.07)' : 'transparent',
+                  border: 'none', borderTop: '1px solid rgba(0,0,0,0.06)',
+                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                }}>
                   <span style={{
-                    flex: 1,
-                    fontSize: 15, fontWeight: active ? 600 : 400,
+                    flex: 1, fontSize: 15,
+                    fontWeight: active ? 600 : 400,
                     color: active ? T.accent : T.text,
-                    letterSpacing: '-0.2px',
-                  }}>
-                    {tpl.title}
-                  </span>
-                  {active && (
-                    <span style={{ fontSize: 16, color: T.accent, fontWeight: 700 }}>✓</span>
-                  )}
+                    letterSpacing: '-0.2px', textAlign: 'left',
+                  }}>{tpl.title}</span>
+                  {active && <span style={{ fontSize: 16, color: T.accent, fontWeight: 700 }}>✓</span>}
                 </button>
               );
             })}
@@ -126,6 +296,17 @@ export default function App() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08)',
         border: `1px solid ${T.border}`,
       }}>
+        {/* Hub button */}
+        <button onClick={() => setShowHub(true)} title="切换文档" style={{
+          width: 34, height: 34, borderRadius: 20, border: 'none',
+          background: 'transparent', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 15, WebkitTapHighlightColor: 'transparent',
+        }}>
+          📂
+        </button>
+        <div style={{ width: 1, height: 16, background: 'rgba(0,0,0,0.1)', margin: '0 1px' }} />
+        {/* View tabs */}
         {([
           ['table',    '≡ 表格'],
           ['mindmap',  '◎ 脑图'],
@@ -139,6 +320,7 @@ export default function App() {
               color: active ? '#fff' : T.textSub,
               fontSize: 12.5, fontWeight: active ? 700 : 500,
               cursor: 'pointer', transition: 'all 0.18s ease',
+              WebkitTapHighlightColor: 'transparent',
             }}>
               {label}
             </button>
@@ -146,6 +328,7 @@ export default function App() {
         })}
       </div>
 
+      {/* ── Views ── */}
       {view === 'mindmap'
         ? <FullMindMap data={tree} />
         : (
@@ -157,7 +340,7 @@ export default function App() {
                   monoColor={monoColor}
                   onToggleColorMode={toggleColorMode}
                   onSelectMonoColor={setMonoColor}
-                  onOpenTemplatePicker={() => setShowPicker(true)}
+                  onOpenTemplatePicker={() => setShowHub(true)}
                 />
               : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
             }
