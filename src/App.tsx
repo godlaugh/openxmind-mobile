@@ -30,6 +30,37 @@ function addRecent(name: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
+// IndexedDB helpers for persisting FileSystemFileHandle across sessions
+const IDB_NAME  = 'oxm-db';
+const IDB_STORE = 'handles';
+
+function openIDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+async function idbPut(name: string, handle: unknown) {
+  const db = await openIDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(handle, name);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+async function idbGet(name: string): Promise<any | null> {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(name);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
 async function pickMdFile(): Promise<{ content: string; name: string; handle?: unknown } | null> {
   if ('showOpenFilePicker' in window) {
     try {
@@ -90,14 +121,41 @@ export default function App() {
   const openFile = useCallback(async () => {
     const result = await pickMdFile();
     if (!result) return;
+    const handle = (result as any).handle ?? null;
     setDocSource('file');
     setFileName(result.name);
-    setFileHandle((result as any).handle ?? null);
+    setFileHandle(handle);
     applyMd(result.content);
     addRecent(result.name);
     setRecentFiles(loadRecent());
+    if (handle) void idbPut(result.name, handle);
     setShowHub(false);
   }, [applyMd]);
+
+  const openRecentFile = useCallback(async (name: string) => {
+    const handle = await idbGet(name).catch(() => null);
+    if (handle) {
+      try {
+        const perm = await handle.queryPermission({ mode: 'read' });
+        const granted = perm === 'granted'
+          || (await handle.requestPermission({ mode: 'read' })) === 'granted';
+        if (granted) {
+          const file    = await handle.getFile();
+          const content = await file.text();
+          setDocSource('file');
+          setFileName(name);
+          setFileHandle(handle);
+          applyMd(content);
+          addRecent(name);
+          setRecentFiles(loadRecent());
+          setShowHub(false);
+          return;
+        }
+      } catch { /* fall through to picker */ }
+    }
+    // No handle or permission denied — fall back to picker
+    void openFile();
+  }, [applyMd, openFile]);
 
   const reloadFile = useCallback(async () => {
     if (!fileHandle) return;
@@ -239,7 +297,7 @@ export default function App() {
                 {recentFiles.map(rf => {
                   const active = docSource === 'file' && rf.name === fileName;
                   return (
-                    <button key={rf.name} onClick={openFile} style={{
+                    <button key={rf.name} onClick={() => openRecentFile(rf.name)} style={{
                       display: 'flex', alignItems: 'center',
                       width: '100%', padding: '13px 22px',
                       background: active ? 'rgba(62,158,140,0.07)' : 'transparent',
