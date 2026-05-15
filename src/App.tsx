@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import TreeTable from './components/TreeTable';
 import MarkdownView from './components/MarkdownView';
 import FullMindMap from './components/FullMindMap';
+import StackView from './components/StackView';
 import { TEMPLATES } from './data/templates';
 import { markdownToTree } from './utils/markdown';
 import { MONO_PALETTES } from './constants/colors';
@@ -87,7 +88,7 @@ async function pickMdFile(): Promise<{ content: string; name: string; handle?: u
 }
 
 export default function App() {
-  const [view,        setView]        = useState<'table' | 'markdown' | 'mindmap'>('table');
+  const [view,        setView]        = useState<'table' | 'markdown' | 'mindmap' | 'stack'>('table');
   const [tree,        setTree]        = useState<MindNode>(() => markdownToTree(TEMPLATES[0].markdown));
   const [markdown,    setMarkdown]    = useState(TEMPLATES[0].markdown);
   const [docSource,   setDocSource]   = useState<DocSource>('none');
@@ -153,7 +154,6 @@ export default function App() {
         }
       } catch { /* fall through to picker */ }
     }
-    // No handle or permission denied — fall back to picker
     void openFile();
   }, [applyMd, openFile]);
 
@@ -246,7 +246,6 @@ export default function App() {
               background: 'rgba(0,0,0,0.18)', margin: '12px auto 20px',
             }} />
 
-            {/* Current file + reload (when a file is open) */}
             {docSource === 'file' && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -269,7 +268,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Open file card */}
             <div style={{ padding: '0 16px 16px' }}>
               <button onClick={openFile} style={{
                 width: '100%', padding: '16px 18px',
@@ -286,7 +284,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Recent files */}
             {recentFiles.length > 0 && (
               <>
                 <div style={{
@@ -315,7 +312,6 @@ export default function App() {
               </>
             )}
 
-            {/* Templates */}
             <div style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '1.2px',
               color: T.textFaint, textTransform: 'uppercase',
@@ -354,7 +350,6 @@ export default function App() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08)',
         border: `1px solid ${T.border}`,
       }}>
-        {/* Hub button */}
         <button onClick={() => setShowHub(true)} title="切换文档" style={{
           width: 34, height: 34, borderRadius: 20, border: 'none',
           background: 'transparent', cursor: 'pointer',
@@ -364,11 +359,11 @@ export default function App() {
           📂
         </button>
         <div style={{ width: 1, height: 16, background: 'rgba(0,0,0,0.1)', margin: '0 1px' }} />
-        {/* View tabs */}
         {([
           ['table',    '≡ 表格'],
           ['mindmap',  '◎ 脑图'],
-          ['markdown', '# Markdown'],
+          ['stack',    '⊞ 卡片'],
+          ['markdown', '# MD'],
         ] as const).map(([v, label]) => {
           const active = view === v;
           return (
@@ -389,21 +384,23 @@ export default function App() {
       {/* ── Views ── */}
       {view === 'mindmap'
         ? <FullMindMap data={tree} />
-        : (
-          <div style={{ paddingBottom: 72 }}>
-            {view === 'table'
-              ? <TreeTable
-                  data={tree}
-                  colorMode={colorMode}
-                  monoColor={monoColor}
-                  onToggleColorMode={toggleColorMode}
-                  onSelectMonoColor={setMonoColor}
-                  onOpenTemplatePicker={() => setShowHub(true)}
-                />
-              : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
-            }
-          </div>
-        )
+        : view === 'stack'
+          ? <StackView data={tree} />
+          : (
+            <div style={{ paddingBottom: 72 }}>
+              {view === 'table'
+                ? <TreeTable
+                    data={tree}
+                    colorMode={colorMode}
+                    monoColor={monoColor}
+                    onToggleColorMode={toggleColorMode}
+                    onSelectMonoColor={setMonoColor}
+                    onOpenTemplatePicker={() => setShowHub(true)}
+                  />
+                : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
+              }
+            </div>
+          )
       }
     </div>
   );
