@@ -110,8 +110,9 @@ export default function StackView({ data }: Props) {
     );
   }
 
-  // Show cards behind in the direction the user is heading
-  const goingBack = isDragging && dragX > 0;
+  // Show cards behind in the direction the user is heading.
+  // exitDir==='right' keeps the previous card visible during the 220ms exit animation.
+  const goingBack = exitDir === 'right' || (isDragging && dragX > 0);
   const behindCards: Array<{ ni: number; depth: number }> = goingBack
     ? Array.from({ length: Math.min(MAX_BEHIND, idx) }, (_, i) => {
         const depth = Math.min(MAX_BEHIND, idx) - i;
