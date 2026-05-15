@@ -158,7 +158,7 @@ export default function StackView({ data }: Props) {
               width: 'calc(100% - 48px)', maxWidth: 340,
               transform: `scale(${scale}) translateY(${ty}px)`,
               transition: 'transform 0.22s ease',
-              zIndex: depth,
+              zIndex: i + 1,
             }}>
               <CardFace
                 node={nodes[ni]}
