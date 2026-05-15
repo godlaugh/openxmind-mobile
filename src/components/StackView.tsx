@@ -159,8 +159,9 @@ export default function StackView({ data }: Props) {
       }}>
         {/* Behind cards (lowest z first) */}
         {behindCards.map(({ ni, depth }, i) => {
-          const scale = 1 - depth * 0.045;
-          const ty    = depth * 10;
+          const d     = exitDir !== null ? Math.max(0, depth - 1) : depth;
+          const scale = 1 - d * 0.045;
+          const ty    = d * 10;
           return (
             <div key={`b${ni}`} style={{
               position: 'absolute',
@@ -181,6 +182,7 @@ export default function StackView({ data }: Props) {
         {/* Top card */}
         {current && (
           <div
+            key={idx}
             style={{
               position: 'absolute',
               width: 'calc(100% - 48px)', maxWidth: 340,
