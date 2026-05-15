@@ -110,7 +110,17 @@ export default function StackView({ data }: Props) {
     );
   }
 
-  const behindCount = Math.min(MAX_BEHIND, nodes.length - 1 - idx);
+  // Show cards behind in the direction the user is heading
+  const goingBack = isDragging && dragX > 0;
+  const behindCards: Array<{ ni: number; depth: number }> = goingBack
+    ? Array.from({ length: Math.min(MAX_BEHIND, idx) }, (_, i) => {
+        const depth = Math.min(MAX_BEHIND, idx) - i;
+        return { ni: idx - depth, depth };
+      })
+    : Array.from({ length: Math.min(MAX_BEHIND, nodes.length - 1 - idx) }, (_, i) => {
+        const depth = Math.min(MAX_BEHIND, nodes.length - 1 - idx) - i;
+        return { ni: idx + depth, depth };
+      });
 
   return (
     <div style={{
@@ -147,11 +157,9 @@ export default function StackView({ data }: Props) {
         padding: '16px 24px',
       }}>
         {/* Behind cards (lowest z first) */}
-        {Array.from({ length: behindCount }, (_, i) => {
-          const depth = behindCount - i;
+        {behindCards.map(({ ni, depth }, i) => {
           const scale = 1 - depth * 0.045;
           const ty    = depth * 10;
-          const ni    = idx + depth;
           return (
             <div key={`b${ni}`} style={{
               position: 'absolute',
