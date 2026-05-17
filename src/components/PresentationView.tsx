@@ -336,20 +336,23 @@ function BulletList({ nodes, accent, depth }: { nodes: MindNode[]; accent: strin
 function BulletItem({ node, accent, depth }: { node: MindNode; accent: string; depth: number }) {
   const status   = node.status ? STATUS_CONFIG[node.status] : null;
   const children = node.children ?? [];
+  // Card style only when the L3 item is itself a sub-section (has children).
+  // Leaf L3 nodes are plain bullets — no card box.
+  const isCard   = depth === 0 && children.length > 0;
   const isRoot   = depth === 0;
 
-  const dotSize = isRoot ? 7 : depth === 1 ? 5 : 4;
-  const fs      = isRoot ? 15 : depth === 1 ? 13.5 : 12.5;
-  const fw      = isRoot ? 600 : depth === 1 ? 500 : 400;
-  const color   = isRoot ? T.text : depth === 1 ? T.textSub : T.textFaint;
-  const dotColor = isRoot ? accent : depth === 1 ? accent + 'BB' : T.textFaint;
+  const dotSize  = isRoot ? 7 : depth === 1 ? 5 : 4;
+  const fs       = isRoot ? 15 : depth === 1 ? 13.5 : 12.5;
+  const fw       = isRoot ? 600 : depth === 1 ? 500 : 400;
+  const color    = isRoot ? T.text : depth === 1 ? T.textSub : T.textFaint;
+  const dotColor = isCard ? accent : isRoot ? accent + 'AA' : depth === 1 ? accent + 'BB' : T.textFaint;
 
   return (
     <div style={{
-      padding: isRoot ? '13px 16px' : 0,
-      borderRadius: isRoot ? 14 : 0,
-      background: isRoot ? accent + '0D' : 'transparent',
-      border: isRoot ? `1px solid ${accent}22` : 'none',
+      padding: isCard ? '13px 16px' : isRoot ? '5px 0' : 0,
+      borderRadius: isCard ? 14 : 0,
+      background: isCard ? accent + '0D' : 'transparent',
+      border: isCard ? `1px solid ${accent}22` : 'none',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{
