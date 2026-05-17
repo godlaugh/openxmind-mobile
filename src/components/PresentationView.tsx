@@ -47,8 +47,9 @@ export default function PresentationView({ data, onExit }: Props) {
   const [dragX,      setDragX]      = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [exitDir,    setExitDir]    = useState<'left' | 'right' | null>(null);
-  const enterFrom  = useRef({ dir: null as 'left' | 'right' | null });
-  const pointerRef = useRef<{ id: number; startX: number; startY: number } | null>(null);
+  const enterFrom    = useRef({ dir: null as 'left' | 'right' | null });
+  const pointerRef   = useRef<{ id: number; startX: number; startY: number } | null>(null);
+  const capturedRef  = useRef(false); // true once we've confirmed a horizontal drag
 
   const total   = slides.length;
   const slide   = slides[idx] ?? slides[0];
@@ -68,8 +69,8 @@ export default function PresentationView({ data, onExit }: Props) {
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (pointerRef.current || exitDir) return;
     pointerRef.current = { id: e.pointerId, startX: e.clientX, startY: e.clientY };
-    setIsDragging(true);
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    capturedRef.current = false;
+    // Don't capture or set isDragging yet — wait to confirm horizontal direction
   }, [exitDir]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
@@ -77,15 +78,32 @@ export default function PresentationView({ data, onExit }: Props) {
     if (!p || p.id !== e.pointerId) return;
     const dx = e.clientX - p.startX;
     const dy = e.clientY - p.startY;
-    if (Math.abs(dx) > Math.abs(dy)) setDragX(dx);
+
+    if (!capturedRef.current) {
+      if (Math.hypot(dx, dy) < 6) return; // haven't moved enough to determine direction
+      if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal: lock in, capture pointer so browser stops scroll handling
+        capturedRef.current = true;
+        setIsDragging(true);
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      } else {
+        // Vertical: let the browser scroll natively, stop tracking
+        pointerRef.current = null;
+        return;
+      }
+    }
+    setDragX(dx);
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     const p = pointerRef.current;
     if (!p || p.id !== e.pointerId) return;
     const dx = e.clientX - p.startX;
-    pointerRef.current = null;
+    const wasDragging = capturedRef.current;
+    pointerRef.current  = null;
+    capturedRef.current = false;
     setIsDragging(false);
+    if (!wasDragging) { setDragX(0); return; }
     if      (dx < -SWIPE_THRESHOLD && hasNext) go('left',  idx + 1);
     else if (dx >  SWIPE_THRESHOLD && hasPrev) go('right', idx - 1);
     else                                        setDragX(0);
@@ -193,7 +211,7 @@ function SlideArea({
   return (
     <div
       ref={ref}
-      style={{ width: '100%', minHeight: '100svh', transform, transition, touchAction: 'none', willChange: 'transform' }}
+      style={{ width: '100%', height: '100svh', overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any, transform, transition, touchAction: 'pan-y', willChange: 'transform' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -254,7 +272,7 @@ function ContentCard({ slide }: { slide: ContentSlide }) {
 
   return (
     <div style={{
-      minHeight: '100svh', background: T.surface,
+      minHeight: '100%', background: T.surface,
       display: 'flex', flexDirection: 'column',
       padding: '72px 28px 60px',
       userSelect: 'none', WebkitUserSelect: 'none',
