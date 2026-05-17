@@ -13,12 +13,17 @@ const SWIPE_THRESHOLD = 72;
 const EXIT_MS         = 280;
 
 interface SectionSlide {
-  type:        'section';
-  node:        MindNode;
-  accent:      string;
-  sectionNum:  number;
-  slideCount:  number;
-  leafBullets: MindNode[];
+  type:       'section';
+  node:       MindNode;
+  accent:     string;
+  sectionNum: number;
+  slideCount: number;
+}
+interface BulletsSlide {
+  type:         'bullets';
+  nodes:        MindNode[];
+  accent:       string;
+  sectionTitle: string;
 }
 interface ContentSlide {
   type:         'content';
@@ -26,18 +31,22 @@ interface ContentSlide {
   accent:       string;
   sectionTitle: string;
 }
-type Slide = SectionSlide | ContentSlide;
+type Slide = SectionSlide | BulletsSlide | ContentSlide;
 
 function flattenToSlides(root: MindNode): Slide[] {
   const out: Slide[] = [];
   (root.children ?? []).forEach((l1, i) => {
     const accent     = ACCENTS[i % ACCENTS.length];
     const l2s        = l1.children ?? [];
-    // L2 leaves (no sub-children) → shown on the SectionCard as bullets
+    // L2 leaves (no sub-children) → grouped into ONE BulletsSlide
     // L2 subsections (have children) → each gets its own ContentSlide
     const leafL2s    = l2s.filter(l2 => !(l2.children?.length));
     const sectionL2s = l2s.filter(l2 =>  !!(l2.children?.length));
-    out.push({ type: 'section', node: l1, accent, sectionNum: i + 1, slideCount: sectionL2s.length, leafBullets: leafL2s });
+    const extraSlides = sectionL2s.length + (leafL2s.length > 0 ? 1 : 0);
+    out.push({ type: 'section', node: l1, accent, sectionNum: i + 1, slideCount: extraSlides });
+    if (leafL2s.length > 0) {
+      out.push({ type: 'bullets', nodes: leafL2s, accent, sectionTitle: l1.title });
+    }
     sectionL2s.forEach(l2 => out.push({ type: 'content', node: l2, accent, sectionTitle: l1.title }));
   });
   return out;
@@ -54,7 +63,7 @@ export default function PresentationView({ data, onExit }: Props) {
   const [exitDir,    setExitDir]    = useState<'left' | 'right' | null>(null);
   const enterFrom    = useRef({ dir: null as 'left' | 'right' | null });
   const pointerRef   = useRef<{ id: number; startX: number; startY: number } | null>(null);
-  const capturedRef  = useRef(false); // true once we've confirmed a horizontal drag
+  const capturedRef  = useRef(false);
 
   const total   = slides.length;
   const slide   = slides[idx] ?? slides[0];
@@ -75,7 +84,6 @@ export default function PresentationView({ data, onExit }: Props) {
     if (pointerRef.current || exitDir) return;
     pointerRef.current = { id: e.pointerId, startX: e.clientX, startY: e.clientY };
     capturedRef.current = false;
-    // Don't capture or set isDragging yet — wait to confirm horizontal direction
   }, [exitDir]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
@@ -85,14 +93,12 @@ export default function PresentationView({ data, onExit }: Props) {
     const dy = e.clientY - p.startY;
 
     if (!capturedRef.current) {
-      if (Math.hypot(dx, dy) < 6) return; // haven't moved enough to determine direction
+      if (Math.hypot(dx, dy) < 6) return;
       if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal: lock in, capture pointer so browser stops scroll handling
         capturedRef.current = true;
         setIsDragging(true);
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
       } else {
-        // Vertical: let the browser scroll natively, stop tracking
         pointerRef.current = null;
         return;
       }
@@ -146,7 +152,6 @@ export default function PresentationView({ data, onExit }: Props) {
         ✕ 退出
       </button>
 
-      {/* Slide (re-mounts on idx change via key) */}
       <SlideArea
         key={idx}
         slide={slide}
@@ -192,7 +197,6 @@ function SlideArea({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // On mount: if we entered from a direction, start off-screen and slide in
   useLayoutEffect(() => {
     const from = enterFrom.current.dir;
     enterFrom.current.dir = null;
@@ -200,10 +204,10 @@ function SlideArea({
     const el = ref.current;
     el.style.transform  = `translateX(${from === 'right' ? '110%' : '-110%'})`;
     el.style.transition = 'none';
-    el.getBoundingClientRect(); // force reflow
+    el.getBoundingClientRect();
     el.style.transform  = 'translateX(0)';
     el.style.transition = `transform ${EXIT_MS}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
-  }, []); // intentionally empty — only runs once on mount
+  }, []);
 
   const transform = exitDir
     ? `translateX(${exitDir === 'left' ? '-110%' : '110%'})`
@@ -224,6 +228,8 @@ function SlideArea({
     >
       {slide.type === 'section'
         ? <SectionCard slide={slide} />
+        : slide.type === 'bullets'
+        ? <BulletsCard slide={slide} />
         : <ContentCard slide={slide} />
       }
     </div>
@@ -233,60 +239,85 @@ function SlideArea({
 // ── SectionCard ──────────────────────────────────────────────────────
 
 function SectionCard({ slide }: { slide: SectionSlide }) {
-  const hasBullets = slide.leafBullets.length > 0;
   return (
     <div style={{
       minHeight: '100svh', background: slide.accent,
       display: 'flex', flexDirection: 'column',
-      alignItems: hasBullets ? 'flex-start' : 'center',
-      justifyContent: hasBullets ? 'flex-start' : 'center',
-      padding: hasBullets ? '80px 36px 60px' : '80px 44px 60px',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '80px 44px 60px',
       userSelect: 'none', WebkitUserSelect: 'none',
     }}>
       <div style={{
         fontSize: 10, fontWeight: 800, letterSpacing: '3px',
         color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase',
-        marginBottom: 22, alignSelf: hasBullets ? 'flex-start' : 'center',
+        marginBottom: 22,
       }}>
         第 {slide.sectionNum} 章
       </div>
 
       <div style={{
-        fontSize: hasBullets ? 30 : 38, fontWeight: 900, color: '#fff',
-        letterSpacing: '-1.2px', lineHeight: 1.15,
-        textAlign: hasBullets ? 'left' : 'center',
-        marginBottom: hasBullets ? 32 : 28,
+        fontSize: 38, fontWeight: 900, color: '#fff',
+        letterSpacing: '-1.2px', lineHeight: 1.15, textAlign: 'center',
+        marginBottom: 28,
       }}>
         {slide.node.title}
       </div>
 
-      {hasBullets && (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {slide.leafBullets.map((b, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-              <div style={{
-                width: 6, height: 6, borderRadius: 3, flexShrink: 0,
-                background: 'rgba(255,255,255,0.55)', marginTop: 7,
-              }} />
-              <span style={{
-                fontSize: 16, fontWeight: 500, color: 'rgba(255,255,255,0.9)',
-                lineHeight: 1.45,
-              }}>
-                {b.title}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!hasBullets && slide.slideCount > 0 && (
-        <div style={{
-          fontSize: 13, color: 'rgba(255,255,255,0.55)',
-          letterSpacing: '0.2px',
-        }}>
+      {slide.slideCount > 0 && (
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.2px' }}>
           {slide.slideCount} 张幻灯片
         </div>
       )}
+    </div>
+  );
+}
+
+// ── BulletsCard ──────────────────────────────────────────────────────
+
+function BulletsCard({ slide }: { slide: BulletsSlide }) {
+  return (
+    <div style={{
+      minHeight: '100%', background: T.surface,
+      display: 'flex', flexDirection: 'column',
+      padding: '72px 28px 60px',
+      userSelect: 'none', WebkitUserSelect: 'none',
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: '2px',
+        color: slide.accent, textTransform: 'uppercase', marginBottom: 18,
+      }}>
+        {slide.sectionTitle}
+      </div>
+
+      <div style={{
+        width: 36, height: 3, borderRadius: 2,
+        background: slide.accent, marginBottom: 28,
+      }} />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {slide.nodes.map((node, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            <div style={{
+              width: 7, height: 7, borderRadius: 4, flexShrink: 0,
+              background: slide.accent + 'AA', marginTop: 5,
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 500, color: T.text, lineHeight: 1.45 }}>
+                {node.title}
+              </div>
+              {node.status && STATUS_CONFIG[node.status] && (
+                <span style={{
+                  display: 'inline-block', marginTop: 3,
+                  fontSize: 9, fontWeight: 700,
+                  color: STATUS_CONFIG[node.status].color,
+                  background: STATUS_CONFIG[node.status].color + '1A',
+                  padding: '1px 5px', borderRadius: 4, letterSpacing: '0.5px',
+                }}>{STATUS_CONFIG[node.status].label}</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -304,7 +335,6 @@ function ContentCard({ slide }: { slide: ContentSlide }) {
       padding: '72px 28px 60px',
       userSelect: 'none', WebkitUserSelect: 'none',
     }}>
-      {/* Section breadcrumb */}
       <div style={{
         fontSize: 10, fontWeight: 800, letterSpacing: '2px',
         color: slide.accent, textTransform: 'uppercase', marginBottom: 18,
@@ -312,7 +342,6 @@ function ContentCard({ slide }: { slide: ContentSlide }) {
         {slide.sectionTitle}
       </div>
 
-      {/* Title */}
       <div style={{
         fontSize: 30, fontWeight: 900, color: T.text,
         letterSpacing: '-0.8px', lineHeight: 1.2, marginBottom: 16,
@@ -320,7 +349,6 @@ function ContentCard({ slide }: { slide: ContentSlide }) {
         {slide.node.title}
       </div>
 
-      {/* Status / owner */}
       {(status || slide.node.owner) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
           {status && (
@@ -338,13 +366,11 @@ function ContentCard({ slide }: { slide: ContentSlide }) {
         </div>
       )}
 
-      {/* Accent divider */}
       <div style={{
         width: 36, height: 3, borderRadius: 2,
         background: slide.accent, marginBottom: 24,
       }} />
 
-      {/* Bullet list */}
       {bullets.length > 0 && (
         <BulletList nodes={bullets} accent={slide.accent} depth={0} />
       )}
@@ -363,8 +389,6 @@ function BulletList({ nodes, accent, depth }: { nodes: MindNode[]; accent: strin
 function BulletItem({ node, accent, depth }: { node: MindNode; accent: string; depth: number }) {
   const status   = node.status ? STATUS_CONFIG[node.status] : null;
   const children = node.children ?? [];
-  // Card style only when the L3 item is itself a sub-section (has children).
-  // Leaf L3 nodes are plain bullets — no card box.
   const isCard   = depth === 0 && children.length > 0;
   const isRoot   = depth === 0;
 
