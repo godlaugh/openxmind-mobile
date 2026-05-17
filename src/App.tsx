@@ -3,6 +3,7 @@ import TreeTable from './components/TreeTable';
 import MarkdownView from './components/MarkdownView';
 import FullMindMap from './components/FullMindMap';
 import StackView from './components/StackView';
+import PresentationView from './components/PresentationView';
 import { TEMPLATES } from './data/templates';
 import { markdownToTree } from './utils/markdown';
 import { MONO_PALETTES } from './constants/colors';
@@ -88,7 +89,7 @@ async function pickMdFile(): Promise<{ content: string; name: string; handle?: u
 }
 
 export default function App() {
-  const [view,        setView]        = useState<'table' | 'markdown' | 'mindmap' | 'stack'>('table');
+  const [view,        setView]        = useState<'table' | 'markdown' | 'mindmap' | 'stack' | 'ppt'>('table');
   const [tree,        setTree]        = useState<MindNode>(() => markdownToTree(TEMPLATES[0].markdown));
   const [markdown,    setMarkdown]    = useState(TEMPLATES[0].markdown);
   const [docSource,   setDocSource]   = useState<DocSource>('none');
@@ -165,7 +166,7 @@ export default function App() {
 
   const toggleColorMode = () => setColorMode(m => m === 'multi' ? 'mono' : 'multi');
 
-  // ── Landing screen ──────────────────────────────────────────────
+  // ── Landing screen ────────────────────────────────────────────────────
   if (docSource === 'none') {
     return (
       <div style={{
@@ -223,7 +224,7 @@ export default function App() {
     );
   }
 
-  // ── Main app ────────────────────────────────────────────────────
+  // ── Main app ──────────────────────────────────────────────────────
   return (
     <div style={{ position: 'relative' }}>
 
@@ -342,8 +343,8 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Floating bottom nav ── */}
-      <div style={{
+      {/* ── Floating bottom nav (hidden in PPT mode) ── */}
+      {view !== 'ppt' && <div style={{
         position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
         zIndex: 100, display: 'flex', alignItems: 'center', gap: 2,
         background: T.surface, borderRadius: 24, padding: '4px 5px',
@@ -363,6 +364,7 @@ export default function App() {
           ['table',    '≡ 表格'],
           ['mindmap',  '◎ 脑图'],
           ['stack',    '⊞ 卡片'],
+          ['ppt',      '▶ 演示'],
           ['markdown', '# MD'],
         ] as const).map(([v, label]) => {
           const active = view === v;
@@ -379,28 +381,30 @@ export default function App() {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {/* ── Views ── */}
-      {view === 'mindmap'
-        ? <FullMindMap data={tree} />
-        : view === 'stack'
-          ? <StackView data={tree} />
-          : (
-            <div style={{ paddingBottom: 72 }}>
-              {view === 'table'
-                ? <TreeTable
-                    data={tree}
-                    colorMode={colorMode}
-                    monoColor={monoColor}
-                    onToggleColorMode={toggleColorMode}
-                    onSelectMonoColor={setMonoColor}
-                    onOpenTemplatePicker={() => setShowHub(true)}
-                  />
-                : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
-              }
-            </div>
-          )
+      {view === 'ppt'
+        ? <PresentationView data={tree} onExit={() => setView('stack')} />
+        : view === 'mindmap'
+          ? <FullMindMap data={tree} />
+          : view === 'stack'
+            ? <StackView data={tree} />
+            : (
+              <div style={{ paddingBottom: 72 }}>
+                {view === 'table'
+                  ? <TreeTable
+                      data={tree}
+                      colorMode={colorMode}
+                      monoColor={monoColor}
+                      onToggleColorMode={toggleColorMode}
+                      onSelectMonoColor={setMonoColor}
+                      onOpenTemplatePicker={() => setShowHub(true)}
+                    />
+                  : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
+                }
+              </div>
+            )
       }
     </div>
   );
