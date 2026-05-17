@@ -301,42 +301,66 @@ function ContentCard({ slide }: { slide: ContentSlide }) {
 
       {/* Bullet list */}
       {bullets.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {bullets.map((b, i) => {
-            const bs = b.status ? STATUS_CONFIG[b.status] : null;
-            return (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'flex-start', gap: 14,
-                padding: '13px 16px', borderRadius: 14,
-                background: slide.accent + '0D',
-                border: `1px solid ${slide.accent}22`,
-              }}>
-                <div style={{
-                  width: 7, height: 7, borderRadius: 4,
-                  background: slide.accent, flexShrink: 0, marginTop: 5,
-                }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: T.text, lineHeight: 1.4 }}>
-                    {b.title}
-                  </div>
-                  {(bs || b.owner) && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                      {bs && (
-                        <span style={{
-                          fontSize: 9, fontWeight: 700, color: bs.color,
-                          background: bs.color + '1A',
-                          padding: '2px 6px', borderRadius: 4, letterSpacing: '0.5px',
-                        }}>{bs.label}</span>
-                      )}
-                      {b.owner && (
-                        <span style={{ fontSize: 11, color: T.textFaint }}>{b.owner}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <BulletList nodes={bullets} accent={slide.accent} depth={0} />
+      )}
+    </div>
+  );
+}
+
+function BulletList({ nodes, accent, depth }: { nodes: MindNode[]; accent: string; depth: number }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: depth === 0 ? 10 : 6 }}>
+      {nodes.map((node, i) => <BulletItem key={i} node={node} accent={accent} depth={depth} />)}
+    </div>
+  );
+}
+
+function BulletItem({ node, accent, depth }: { node: MindNode; accent: string; depth: number }) {
+  const status   = node.status ? STATUS_CONFIG[node.status] : null;
+  const children = node.children ?? [];
+  const isRoot   = depth === 0;
+
+  const dotSize = isRoot ? 7 : depth === 1 ? 5 : 4;
+  const fs      = isRoot ? 15 : depth === 1 ? 13.5 : 12.5;
+  const fw      = isRoot ? 600 : depth === 1 ? 500 : 400;
+  const color   = isRoot ? T.text : depth === 1 ? T.textSub : T.textFaint;
+  const dotColor = isRoot ? accent : depth === 1 ? accent + 'BB' : T.textFaint;
+
+  return (
+    <div style={{
+      padding: isRoot ? '13px 16px' : 0,
+      borderRadius: isRoot ? 14 : 0,
+      background: isRoot ? accent + '0D' : 'transparent',
+      border: isRoot ? `1px solid ${accent}22` : 'none',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{
+          width: dotSize, height: dotSize, borderRadius: dotSize / 2,
+          background: dotColor, flexShrink: 0, marginTop: isRoot ? 5 : 6,
+        }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: fs, fontWeight: fw, color, lineHeight: 1.4 }}>
+            {node.title}
+          </div>
+          {(status || node.owner) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              {status && (
+                <span style={{
+                  fontSize: 9, fontWeight: 700, color: status.color,
+                  background: status.color + '1A',
+                  padding: '1px 5px', borderRadius: 4, letterSpacing: '0.5px',
+                }}>{status.label}</span>
+              )}
+              {node.owner && (
+                <span style={{ fontSize: 11, color: T.textFaint }}>{node.owner}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {children.length > 0 && (
+        <div style={{ paddingLeft: 19, marginTop: 8 }}>
+          <BulletList nodes={children} accent={accent} depth={depth + 1} />
         </div>
       )}
     </div>
