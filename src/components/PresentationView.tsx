@@ -13,11 +13,12 @@ const SWIPE_THRESHOLD = 72;
 const EXIT_MS         = 280;
 
 interface SectionSlide {
-  type:       'section';
-  node:       MindNode;
-  accent:     string;
-  sectionNum: number;
-  slideCount: number;
+  type:        'section';
+  node:        MindNode;
+  accent:      string;
+  sectionNum:  number;
+  slideCount:  number;
+  leafBullets: MindNode[];
 }
 interface ContentSlide {
   type:         'content';
@@ -30,10 +31,14 @@ type Slide = SectionSlide | ContentSlide;
 function flattenToSlides(root: MindNode): Slide[] {
   const out: Slide[] = [];
   (root.children ?? []).forEach((l1, i) => {
-    const accent = ACCENTS[i % ACCENTS.length];
-    const l2s    = l1.children ?? [];
-    out.push({ type: 'section', node: l1, accent, sectionNum: i + 1, slideCount: l2s.length });
-    l2s.forEach(l2 => out.push({ type: 'content', node: l2, accent, sectionTitle: l1.title }));
+    const accent     = ACCENTS[i % ACCENTS.length];
+    const l2s        = l1.children ?? [];
+    // L2 leaves (no sub-children) → shown on the SectionCard as bullets
+    // L2 subsections (have children) → each gets its own ContentSlide
+    const leafL2s    = l2s.filter(l2 => !(l2.children?.length));
+    const sectionL2s = l2s.filter(l2 =>  !!(l2.children?.length));
+    out.push({ type: 'section', node: l1, accent, sectionNum: i + 1, slideCount: sectionL2s.length, leafBullets: leafL2s });
+    sectionL2s.forEach(l2 => out.push({ type: 'content', node: l2, accent, sectionTitle: l1.title }));
   });
   return out;
 }
@@ -228,31 +233,53 @@ function SlideArea({
 // ── SectionCard ──────────────────────────────────────────────────────
 
 function SectionCard({ slide }: { slide: SectionSlide }) {
+  const hasBullets = slide.leafBullets.length > 0;
   return (
     <div style={{
       minHeight: '100svh', background: slide.accent,
       display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: '80px 44px 60px',
+      alignItems: hasBullets ? 'flex-start' : 'center',
+      justifyContent: hasBullets ? 'flex-start' : 'center',
+      padding: hasBullets ? '80px 36px 60px' : '80px 44px 60px',
       userSelect: 'none', WebkitUserSelect: 'none',
     }}>
       <div style={{
         fontSize: 10, fontWeight: 800, letterSpacing: '3px',
         color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase',
-        marginBottom: 22,
+        marginBottom: 22, alignSelf: hasBullets ? 'flex-start' : 'center',
       }}>
         第 {slide.sectionNum} 章
       </div>
 
       <div style={{
-        fontSize: 38, fontWeight: 900, color: '#fff',
-        letterSpacing: '-1.2px', lineHeight: 1.15, textAlign: 'center',
-        marginBottom: 28,
+        fontSize: hasBullets ? 30 : 38, fontWeight: 900, color: '#fff',
+        letterSpacing: '-1.2px', lineHeight: 1.15,
+        textAlign: hasBullets ? 'left' : 'center',
+        marginBottom: hasBullets ? 32 : 28,
       }}>
         {slide.node.title}
       </div>
 
-      {slide.slideCount > 0 && (
+      {hasBullets && (
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {slide.leafBullets.map((b, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+              <div style={{
+                width: 6, height: 6, borderRadius: 3, flexShrink: 0,
+                background: 'rgba(255,255,255,0.55)', marginTop: 7,
+              }} />
+              <span style={{
+                fontSize: 16, fontWeight: 500, color: 'rgba(255,255,255,0.9)',
+                lineHeight: 1.45,
+              }}>
+                {b.title}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!hasBullets && slide.slideCount > 0 && (
         <div style={{
           fontSize: 13, color: 'rgba(255,255,255,0.55)',
           letterSpacing: '0.2px',
