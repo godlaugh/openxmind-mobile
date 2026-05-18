@@ -67,15 +67,12 @@ const previewCSS = `
 `;
 
 const components: Components = {
-  // Make checkboxes read-only and styled
   input: ({ ...props }) => (
     <input {...props} readOnly style={{ pointerEvents: 'none' }} />
   ),
-  // Open links in new tab safely
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
   ),
-  // Raw HTML for our custom oxm-status spans
   span: ({ className, children, ...props }) => (
     <span className={className} {...props}>{children}</span>
   ),
@@ -119,10 +116,11 @@ const EyeOffIcon = () => (
 interface Props {
   markdown: string;
   onChange: (md: string) => void;
+  showPreview: boolean;
+  onTogglePreview: (v: boolean) => void;
 }
 
-const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
-  const [showPreview, setShowPreview] = useState(false);
+const MarkdownView: React.FC<Props> = ({ markdown, onChange, showPreview, onTogglePreview }) => {
   const [pasteState,  setPasteState]  = useState<'idle'|'ok'|'denied'>('idle');
   const [copied,      setCopied]      = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -172,7 +170,7 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
         </div>
         <div style={{ flex: 1 }} />
         <button
-          onClick={() => setShowPreview(p => !p)}
+          onClick={() => onTogglePreview(!showPreview)}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '6px 12px', borderRadius: 20,
