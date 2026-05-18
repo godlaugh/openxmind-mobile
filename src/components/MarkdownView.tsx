@@ -1,21 +1,102 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Components } from 'react-markdown';
 
 const T = {
   pageBg:     '#EDECEA',
   surface:    '#FFFFFF',
-  surfaceAlt: '#F7F6F3',
+  surfaceAlt: '#F5F4F1',
   border:     'rgba(0,0,0,0.09)',
   text:       '#1A181E',
   textSub:    '#65657A',
   textFaint:  '#AAAABB',
   accent:     '#3E9E8C',
-  h2:         '#3E9E8C',
-  h3:         '#8F6BB0',
-  h4:         '#C08C3A',
-  todo:       '#AAAABB',
-  doing:      '#5580C0',
-  done:       '#3E9E8C',
+  codeBg:     '#F0EEF6',
+  codeText:   '#7C3AED',
+  blockBg:    '#F7F6F3',
+  blockBorder:'#D1D5DB',
 };
+
+// Pre-process custom syntax: [todo]/[doing]/[done] → HTML, @user → styled
+function preProcess(md: string): string {
+  return md
+    .replace(/\[(todo)\]/gi, '<span class="oxm-status oxm-todo">TODO</span>')
+    .replace(/\[(doing)\]/gi, '<span class="oxm-status oxm-doing">DOING</span>')
+    .replace(/\[(done)\]/gi, '<span class="oxm-status oxm-done">DONE</span>')
+    .replace(/@(\S+)/g, '<span class="oxm-owner">@$1</span>');
+}
+
+const previewCSS = `
+.oxm-md { font-family: -apple-system, 'Segoe UI', sans-serif; color: #1A181E; line-height: 1.7; }
+.oxm-md h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.5px; border-bottom: 2px solid #EDECEA; padding-bottom: 10px; }
+.oxm-md h2 { font-size: 16px; font-weight: 700; color: #3E9E8C; margin: 22px 0 6px; padding-left: 10px; border-left: 3px solid #3E9E8C; }
+.oxm-md h3 { font-size: 14px; font-weight: 600; color: #8F6BB0; margin: 16px 0 4px; }
+.oxm-md h4 { font-size: 13px; font-weight: 600; color: #C08C3A; margin: 12px 0 4px; }
+.oxm-md h5, .oxm-md h6 { font-size: 12px; font-weight: 600; color: #AAAABB; margin: 10px 0 2px; }
+.oxm-md p { margin: 6px 0 10px; font-size: 14px; color: #3A3848; }
+.oxm-md ul, .oxm-md ol { margin: 4px 0 10px; padding-left: 22px; }
+.oxm-md li { font-size: 13.5px; color: #3A3848; margin-bottom: 4px; line-height: 1.55; }
+.oxm-md li > p { margin: 0; }
+.oxm-md li input[type=checkbox] { accent-color: #3E9E8C; width: 14px; height: 14px; margin-right: 6px; vertical-align: middle; cursor: default; }
+.oxm-md li.task-list-item { list-style: none; margin-left: -18px; }
+.oxm-md strong { font-weight: 700; color: #1A181E; }
+.oxm-md em { font-style: italic; color: #4A4858; }
+.oxm-md del { color: #AAAABB; text-decoration: line-through; }
+.oxm-md code { font-family: 'SF Mono','Fira Code',monospace; font-size: 12px; background: #F0EEF6; color: #7C3AED; padding: 1px 5px; border-radius: 4px; }
+.oxm-md pre { background: #1E1E2E; border-radius: 12px; padding: 16px; margin: 10px 0; overflow-x: auto; }
+.oxm-md pre code { background: none; color: #CDD6F4; font-size: 12.5px; padding: 0; border-radius: 0; }
+.oxm-md blockquote { margin: 10px 0; padding: 10px 16px; background: #F7F6F3; border-left: 3px solid #D1D5DB; border-radius: 0 8px 8px 0; }
+.oxm-md blockquote p { margin: 0; color: #65657A; font-style: italic; }
+.oxm-md table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+.oxm-md thead { background: #F5F4F1; }
+.oxm-md th { font-weight: 700; color: #1A181E; padding: 8px 12px; border: 1px solid rgba(0,0,0,0.1); text-align: left; }
+.oxm-md td { padding: 7px 12px; border: 1px solid rgba(0,0,0,0.08); color: #3A3848; }
+.oxm-md tr:nth-child(even) td { background: #FAFAF9; }
+.oxm-md hr { border: none; border-top: 1px solid rgba(0,0,0,0.1); margin: 18px 0; }
+.oxm-md a { color: #3E9E8C; text-decoration: underline; text-decoration-color: rgba(62,158,140,0.4); }
+.oxm-md img { max-width: 100%; border-radius: 8px; }
+.oxm-status { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px; margin: 0 2px; vertical-align: middle; }
+.oxm-todo  { background: rgba(170,170,187,0.15); color: #AAAABB; border: 1px solid rgba(170,170,187,0.35); }
+.oxm-doing { background: rgba(85,128,192,0.12); color: #5580C0; border: 1px solid rgba(85,128,192,0.3); }
+.oxm-done  { background: rgba(62,158,140,0.12); color: #3E9E8C; border: 1px solid rgba(62,158,140,0.3); }
+.oxm-owner { font-weight: 600; color: #8F6BB0; font-size: 0.92em; }
+`;
+
+const components: Components = {
+  // Make checkboxes read-only and styled
+  input: ({ ...props }) => (
+    <input {...props} readOnly style={{ pointerEvents: 'none' }} />
+  ),
+  // Open links in new tab safely
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+  ),
+  // Raw HTML for our custom oxm-status spans
+  span: ({ className, children, ...props }) => (
+    <span className={className} {...props}>{children}</span>
+  ),
+};
+
+function Preview({ markdown }: { markdown: string }) {
+  const processed = preProcess(markdown);
+  return (
+    <>
+      <style>{previewCSS}</style>
+      <div className="oxm-md">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[]}
+          components={components}
+          allowedElements={undefined}
+          unwrapDisallowed={false}
+        >
+          {processed}
+        </ReactMarkdown>
+      </div>
+    </>
+  );
+}
 
 const EyeIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -24,7 +105,6 @@ const EyeIcon = () => (
     <circle cx="12" cy="12" r="3"/>
   </svg>
 );
-
 const EyeOffIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -32,97 +112,6 @@ const EyeOffIcon = () => (
     <line x1="1" y1="1" x2="23" y2="23"/>
   </svg>
 );
-
-interface Token { type: 'h1'|'h2'|'h3'|'h4'|'h5'|'h6'|'li'|'blank'|'text'; content: string }
-
-function tokenize(md: string): Token[] {
-  return md.split('\n').map(raw => {
-    const line = raw.trimEnd();
-    const hm = line.match(/^(#{1,6})\s+(.*)/);
-    if (hm) return { type: `h${hm[1].length}` as Token['type'], content: hm[2] };
-    const lm = line.match(/^[-*+]\s+(.*)/);
-    if (lm) return { type: 'li', content: lm[1] };
-    if (!line.trim()) return { type: 'blank', content: '' };
-    return { type: 'text', content: line };
-  });
-}
-
-function InlineContent({ text }: { text: string }) {
-  type Span = { start: number; end: number; node: React.ReactNode };
-  const spans: Span[] = [];
-  let key = 0;
-  const statusRe = /\[(todo|doing|done)\]/gi;
-  const ownerRe  = /@(\S+)/g;
-  let m: RegExpExecArray | null;
-  statusRe.lastIndex = 0;
-  while ((m = statusRe.exec(text)) !== null) {
-    const s = m[1].toLowerCase() as 'todo'|'doing'|'done';
-    spans.push({ start: m.index, end: m.index + m[0].length, node: (
-      <span key={key++} style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.3px', background: T[s] + '18', color: T[s], border: `1px solid ${T[s]}40`, margin: '0 2px' }}>{m[0]}</span>
-    )});
-  }
-  ownerRe.lastIndex = 0;
-  while ((m = ownerRe.exec(text)) !== null) {
-    spans.push({ start: m.index, end: m.index + m[0].length, node: <span key={key++} style={{ fontWeight: 600, color: '#8F6BB0', fontSize: '0.92em' }}>{m[0]}</span> });
-  }
-  spans.sort((a, b) => a.start - b.start);
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  for (const span of spans) {
-    if (span.start > cursor) parts.push(text.slice(cursor, span.start));
-    parts.push(span.node);
-    cursor = span.end;
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return <>{parts}</>;
-}
-
-function Preview({ markdown }: { markdown: string }) {
-  const tokens = tokenize(markdown);
-  const cfg: Record<string, { size: number; weight: number; color: string; indent: number; borderLeft?: string }> = {
-    h1: { size: 22, weight: 800, color: T.text, indent: 0 },
-    h2: { size: 15, weight: 700, color: T.h2,   indent: 0,  borderLeft: `3px solid ${T.h2}` },
-    h3: { size: 13, weight: 600, color: T.h3,   indent: 16 },
-    h4: { size: 12, weight: 500, color: T.h4,   indent: 28 },
-    h5: { size: 11.5, weight: 500, color: T.textSub,   indent: 36 },
-    h6: { size: 11,   weight: 400, color: T.textFaint, indent: 44 },
-  };
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {tokens.map((tok, i) => {
-        if (tok.type === 'blank') {
-          const prev = tokens[i - 1];
-          return <div key={i} style={{ height: prev && (prev.type === 'h1' || prev.type === 'h2') ? 14 : 6 }} />;
-        }
-        if (tok.type === 'li') {
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginLeft: 44 }}>
-              <span style={{ fontSize: 11, color: T.textFaint, flexShrink: 0, fontFamily: 'monospace' }}>-</span>
-              <span style={{ fontSize: 11.5, color: T.textSub, lineHeight: 1.4 }}><InlineContent text={tok.content} /></span>
-            </div>
-          );
-        }
-        if (tok.type.startsWith('h')) {
-          const c = cfg[tok.type] ?? cfg.h6;
-          const hashes = '#'.repeat(parseInt(tok.type[1]));
-          const prev = tokens.slice(0, i).reverse().find(t => t.type !== 'blank');
-          const spacer = tok.type === 'h2' && prev && prev.type !== 'h1'
-            ? <div key={`sp-${i}`} style={{ height: 20 }} /> : null;
-          return (
-            <React.Fragment key={i}>
-              {spacer}
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginLeft: c.indent, paddingLeft: c.borderLeft ? 10 : 0, borderLeft: c.borderLeft }}>
-                <span style={{ fontSize: 10, fontWeight: 600, color: c.color + '70', flexShrink: 0, fontFamily: 'monospace' }}>{hashes}</span>
-                <span style={{ fontSize: c.size, fontWeight: c.weight, color: c.color, lineHeight: 1.35 }}><InlineContent text={tok.content} /></span>
-              </div>
-            </React.Fragment>
-          );
-        }
-        return <span key={i} style={{ fontSize: 12, color: T.textSub }}>{tok.content}</span>;
-      })}
-    </div>
-  );
-}
 
 interface Props {
   markdown: string;
@@ -181,7 +170,6 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
         <div style={{ flex: 1 }} />
         <button
           onClick={() => setShowPreview(p => !p)}
-          title={showPreview ? '返回编辑' : '预览'}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '6px 12px', borderRadius: 20,
@@ -190,6 +178,7 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
             color: showPreview ? '#fff' : T.textSub,
             fontSize: 11, fontWeight: 600,
             cursor: 'pointer', transition: 'all 0.18s',
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
           {showPreview ? <EyeOffIcon /> : <EyeIcon />}
@@ -207,6 +196,7 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
                 background: pasteState === 'ok' ? T.accent : pasteState === 'denied' ? '#C08C3A' : T.text,
                 color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
                 boxShadow: '0 2px 10px rgba(0,0,0,0.15)', transition: 'background 0.2s',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
               {pasteState === 'ok' ? '✓ 已粘贴' : pasteState === 'denied' ? '请允许访问剪贴板' : '快速粘贴'}
@@ -219,6 +209,7 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
                 border: `1px solid ${T.border}`, background: T.surface,
                 color: isEmpty ? T.textFaint : T.textSub,
                 fontSize: 13, fontWeight: 600, cursor: isEmpty ? 'default' : 'pointer',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
               清除
@@ -232,6 +223,7 @@ const MarkdownView: React.FC<Props> = ({ markdown, onChange }) => {
                   background: copied ? T.accent + '18' : T.surface,
                   color: copied ? T.accent : T.textSub,
                   fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+                  WebkitTapHighlightColor: 'transparent',
                 }}
               >
                 {copied ? '✓' : '复制'}
