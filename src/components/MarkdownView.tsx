@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 
 const T = {
@@ -85,8 +88,8 @@ function Preview({ markdown }: { markdown: string }) {
       <style>{previewCSS}</style>
       <div className="oxm-md">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
           components={components}
           allowedElements={undefined}
           unwrapDisallowed={false}
