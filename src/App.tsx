@@ -98,6 +98,7 @@ export default function App() {
   const [fileHandle,  setFileHandle]  = useState<any>(null);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>(loadRecent);
   const [showHub,     setShowHub]     = useState(false);
+  const [mdPreview,   setMdPreview]   = useState(false);
   const [colorMode,   setColorMode]   = useState<'multi' | 'mono'>('multi');
   const [monoColor,   setMonoColor]   = useState(MONO_PALETTES[0].color);
 
@@ -166,7 +167,7 @@ export default function App() {
 
   const toggleColorMode = () => setColorMode(m => m === 'multi' ? 'mono' : 'multi');
 
-  // ── Landing screen ────────────────────────────────────────────────────
+  // ── Landing screen ──────────────────────────────────────────────────────
   if (docSource === 'none') {
     return (
       <div style={{
@@ -224,7 +225,7 @@ export default function App() {
     );
   }
 
-  // ── Main app ──────────────────────────────────────────────────────
+  // ── Main app ──────────────────────────────────────────────────
   return (
     <div style={{ position: 'relative' }}>
 
@@ -343,8 +344,8 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Floating bottom nav (hidden in PPT mode) ── */}
-      {view !== 'ppt' && <div style={{
+      {/* ── Floating bottom nav (hidden in PPT mode and MD edit mode) ── */}
+      {view !== 'ppt' && !(view === 'markdown' && !mdPreview) && <div style={{
         position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
         zIndex: 100, display: 'flex', alignItems: 'center', gap: 2,
         background: T.surface, borderRadius: 24, padding: '4px 5px',
@@ -401,7 +402,7 @@ export default function App() {
                       onSelectMonoColor={setMonoColor}
                       onOpenTemplatePicker={() => setShowHub(true)}
                     />
-                  : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} />
+                  : <MarkdownView markdown={markdown} onChange={handleMarkdownChange} showPreview={mdPreview} onTogglePreview={setMdPreview} />
                 }
               </div>
             )
