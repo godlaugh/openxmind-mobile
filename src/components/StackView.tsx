@@ -45,8 +45,9 @@ export default function StackView({ data }: Props) {
   }, []);
 
   const drillIn = useCallback(() => {
-    if (drillNode) return; // already at max depth
-    if (current?.children?.length) {
+    if (drillNode) return;
+    // Only drill if at least one child has its own children (otherwise cards would show title-only)
+    if (current?.children?.some(c => c.children?.length)) {
       setDrillNode(current);
       setIdx(0);
     }
@@ -218,7 +219,7 @@ export default function StackView({ data }: Props) {
                     isTop={false}
                     cardIdx={ni}
                     total={nodes.length}
-                    canDrill={!drillNode && !!(nodes[ni].children?.length)}
+                    canDrill={!drillNode && !!(nodes[ni].children?.some(c => c.children?.length))}
                   />
                 </div>
               );
@@ -235,7 +236,7 @@ export default function StackView({ data }: Props) {
                     ? `translateX(${exitDir === 'left' ? -540 : 540}px) rotate(${exitDir === 'left' ? -12 : 12}deg)`
                     : `translateX(${isDragging ? dragX : 0}px) rotate(${isDragging ? dragX * 0.022 : 0}deg)`,
                   transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94)',
-                  cursor: (!drillNode && current.children?.length) ? 'pointer' : 'default',
+                  cursor: (!drillNode && current.children?.some(c => c.children?.length)) ? 'pointer' : 'default',
                   touchAction: 'none',
                 }}
                 onPointerDown={onPointerDown}
@@ -249,7 +250,7 @@ export default function StackView({ data }: Props) {
                   isTop
                   cardIdx={idx}
                   total={nodes.length}
-                  canDrill={!drillNode && !!(current.children?.length)}
+                  canDrill={!drillNode && !!(current.children?.some(c => c.children?.length))}
                 />
               </div>
             )}
