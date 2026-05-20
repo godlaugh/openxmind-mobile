@@ -32,7 +32,6 @@ function addRecent(name: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
-// IndexedDB helpers for persisting FileSystemFileHandle across sessions
 const IDB_NAME  = 'oxm-db';
 const IDB_STORE = 'handles';
 
@@ -352,15 +351,6 @@ export default function App() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08)',
         border: `1px solid ${T.border}`,
       }}>
-        <button onClick={() => setShowHub(true)} title="切换文档" style={{
-          width: 34, height: 34, borderRadius: 20, border: 'none',
-          background: 'transparent', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 15, WebkitTapHighlightColor: 'transparent',
-        }}>
-          📂
-        </button>
-        <div style={{ width: 1, height: 16, background: 'rgba(0,0,0,0.1)', margin: '0 1px' }} />
         {([
           ['table',    '≡ 表格'],
           ['mindmap',  '◎ 脑图'],
