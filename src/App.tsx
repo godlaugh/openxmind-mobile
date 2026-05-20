@@ -32,6 +32,7 @@ function addRecent(name: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
+// IndexedDB helpers for persisting FileSystemFileHandle across sessions
 const IDB_NAME  = 'oxm-db';
 const IDB_STORE = 'handles';
 
